@@ -1,2 +1,5 @@
-./.idea
-./.out
+# Ignore IntelliJ IDEA project files and build outputs
+*.iml
+/.idea/
+/out/
+
