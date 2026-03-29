@@ -53,11 +53,12 @@ public class ServerGUI extends JFrame {
     private JTextField        tfBroadcast;
 
     // Keep user-list selection across refreshes for up to 10 minutes.
-    private static final long USER_SELECTION_HOLD_MS = 10L * 60L * 1000L;
+    private static final long USER_SELECTION_HOLD_MS = 10000000L;
     private final Set<String> retainedUserSelection = new HashSet<>();
     private long retainedUserSelectionUntilMs = 0L;
     private boolean restoringUserSelection = false;
     private JTextField tfPass;
+    private volatile boolean userSelectedPending = false;
 
     public ServerGUI() {
         super("ChatLite Server Console");
@@ -80,7 +81,9 @@ public class ServerGUI extends JFrame {
         // Refresh sessions AND mailbox stats every 2 seconds
         new Timer(2000, e -> {
             refreshSessions();
-            refreshMailbox();   // FIX #4
+            refreshMailbox();
+            refreshSessions();
+            refreshMailbox();
         }).start();
         new Timer(1000, e -> updateUptime()).start();
     }
@@ -152,8 +155,10 @@ public class ServerGUI extends JFrame {
         existingUsersList.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         existingUsersList.addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting() && !restoringUserSelection) {
+                userSelectedPending = !existingUsersList.isSelectionEmpty();
                 rememberUserSelection();
             }
+
         });
         existingUsersList.setBackground(BG_SURFACE);
         existingUsersList.setForeground(TEXT_PRIMARY);
@@ -363,6 +368,7 @@ public class ServerGUI extends JFrame {
     }
 
     private void refreshSessions() {
+        if (userSelectedPending) return;
         sessionsModel.setRowCount(0);
 
         // Snapshot current selected users before replacing list contents.
@@ -421,6 +427,7 @@ public class ServerGUI extends JFrame {
     }
 
     private void deleteSelected() {
+        userSelectedPending = false;
         List<String> selectedEntries = existingUsersList.getSelectedValuesList();
         if (selectedEntries.isEmpty()) {
             appendLog("Delete skipped: no user selected.");
@@ -442,6 +449,7 @@ public class ServerGUI extends JFrame {
     }
 
     private void kickSelected(JTable tbl) {
+        userSelectedPending = false;
         int row = tbl.getSelectedRow();
         if (row < 0) {
             appendLog("Kick skipped: no session selected.");
