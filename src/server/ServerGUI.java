@@ -370,6 +370,9 @@ public class ServerGUI extends JFrame {
             JOptionPane.showMessageDialog(this,
                     "Failed to start server:\n" + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
         }
+        server.registerUser("Ahmed", "1234");
+        server.registerUser("Ali",   "1234");
+        appendLog("Sample users created: alice, bob (password: 1234)");
     }
 
     private void shutdown() {
