@@ -37,10 +37,8 @@ public class ClientGUI extends JFrame {
     private String     myUsername  = "";
     private String     currentRoom = Protocol.DEFAULT_ROOM;
 
-    // FIX #2: track whether we are currently collecting a USERS response
     private boolean collectingUsers = false;
 
-    // FIX #1: master log of all chat lines, used for search filtering
     private final List<String> allChatLines = new ArrayList<>();
 
     private DefaultListModel<String> roomListModel = new DefaultListModel<>();
@@ -59,7 +57,6 @@ public class ClientGUI extends JFrame {
     private JLabel            lblUptime;
     private long              connectionStartTime;
     private Timer             uptimeTimer;
-    // near: private String currentRoom = Protocol.DEFAULT_ROOM;
     private boolean serverShutdown = false;
 
     public ClientGUI() {
@@ -168,7 +165,6 @@ public class ClientGUI extends JFrame {
         JButton btnRefresh = styledBtn("↺  Refresh", BG_BUTTON);
         btnRefresh.addActionListener(e -> {
             if (client != null && client.isConnected()) {
-                // FIX #2: clear lists before requesting fresh data from server
                 clearUserList();
                 client.requestUsers();
                 client.requestRooms();
@@ -198,7 +194,6 @@ public class ClientGUI extends JFrame {
         chatSP.setBorder(titledBorder("MESSAGES"));
         chatSP.getViewport().setBackground(new Color(22, 20, 18));
 
-        // FIX #1: wire up search box with a DocumentListener
         searchBox = styledField("Search messages...");
         searchBox.getDocument().addDocumentListener(new DocumentListener() {
             @Override public void insertUpdate(DocumentEvent e)  { filterChat(); }
@@ -317,7 +312,7 @@ public class ClientGUI extends JFrame {
 
     private void showLoginDialog() {
         JDialog d = new JDialog(this, "Connect", true);
-        d.setSize(340, 230);
+        d.setSize(340, 270);
         d.setLocationRelativeTo(this);
         d.getContentPane().setBackground(BG_PANEL);
         d.setLayout(new GridBagLayout());
@@ -339,19 +334,31 @@ public class ClientGUI extends JFrame {
         gc.gridy=2; gc.gridx=0; d.add(muted("Username:"), gc);
         gc.gridx=1; d.add(tfUser, gc);
 
+        // ── Password field ────────────────────────────────────────────────────
+        JPasswordField tfPassword = new JPasswordField();
+        tfPassword.setBackground(BG_SURFACE);
+        tfPassword.setForeground(TEXT_PRIMARY);
+        tfPassword.setCaretColor(ACCENT);
+        tfPassword.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        tfPassword.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(BORDER_CLR),
+                BorderFactory.createEmptyBorder(4, 8, 4, 8)));
+
+        gc.gridy=3; gc.gridx=0; d.add(muted("Password:"), gc);
+        gc.gridx=1; d.add(tfPassword, gc);
+        // ─────────────────────────────────────────────────────────────────────
+
         JButton btnConn = styledBtn("  Connect  ", BG_BTN_SEND);
         btnConn.setForeground(new Color(225, 238, 210));
-        gc.gridy=3; gc.gridx=0; gc.gridwidth=2; d.add(btnConn, gc);
+        gc.gridy=4; gc.gridx=0; gc.gridwidth=2; d.add(btnConn, gc);
 
         btnConn.addActionListener(e -> {
             String host = tfHost.getText().trim();
             String user = tfUser.getText().trim();
 
-            // Username placeholder should not be treated as a real value.
             Object phUser = tfUser.getClientProperty("placeholder");
             if (phUser != null && user.equals(phUser.toString())) user = "";
 
-            // Keep configured server host as default when host is left blank.
             if (host.isEmpty()) host = Protocol.SERVER_HOST;
 
             if (user.isEmpty()) {
@@ -363,7 +370,10 @@ public class ClientGUI extends JFrame {
                 client = new ChatClient(this::onServerMessage, this::onDisconnect);
                 client.connect(host, Protocol.SERVER_PORT);
                 myUsername = user;
-                client.login(user);
+                // ── Send username + password to server ────────────────────
+                String password = new String(tfPassword.getPassword());
+                client.login(user, password);
+                // ─────────────────────────────────────────────────────────
                 setTitle("ChatLite  —  " + user);
                 connLabel.setText("  |  " + host + ":" + Protocol.SERVER_PORT);
                 log("Connected as " + user);
@@ -427,14 +437,9 @@ public class ClientGUI extends JFrame {
             }
 
         } else if (line.startsWith(Protocol.R_USERS)) {
-            // "213 <count>" signals start of a user list
-            // "213 END"     signals end of user list
-            // "213U <name> <status>" is an individual entry
             if (line.equals(Protocol.R_USERS_END)) {
-                // FIX #2: end of USERS response — stop collecting
                 collectingUsers = false;
             } else if (line.startsWith(Protocol.R_USERS_ENTRY)) {
-                // individual user entry
                 String[] p = line.split(" ", 3);
                 if (p.length >= 2) {
                     String user   = p[1];
@@ -444,8 +449,6 @@ public class ClientGUI extends JFrame {
                     pmTargetCombo.addItem(user);
                 }
             } else {
-                // "213 <count>" — start of list: clear stale data first
-                // FIX #2: clear user list before populating with fresh data
                 clearUserList();
                 collectingUsers = true;
             }
@@ -462,7 +465,7 @@ public class ClientGUI extends JFrame {
         } else if (line.startsWith(Protocol.R_USER_LEFT)) {
             String u = line.split(" ").length > 1 ? line.split(" ")[1] : "?";
             appendSystem("← " + u + " left");
-            // USER_LEFT is room-scoped (switch/leave/disconnect), so do not alter global online list here.
+
         } else if (line.equals(Protocol.R_WELCOME)) {
             connectionStartTime = System.currentTimeMillis();
             updateUptime();
@@ -471,23 +474,28 @@ public class ClientGUI extends JFrame {
         } else if (line.equals(Protocol.R_NAME_TAKEN)) {
             JOptionPane.showMessageDialog(this,
                     "Username already taken!", "Error", JOptionPane.ERROR_MESSAGE);
-        }
 
-     else if (line.startsWith(Protocol.R_STATUS_UPDATE)) {
-        // "216 STATUS <username> <newStatus>"
-        String[] p = line.split(" ", 4);
-        if (p.length >= 4) {
-            String user      = p[2];
-            String newStatus = p[3].toUpperCase();
-            updateUserStatus(user, newStatus);
-        }
-    }
+        } else if (line.startsWith(Protocol.R_STATUS_UPDATE)) {
+            // "216 STATUS <username> <newStatus>"
+            String[] p = line.split(" ", 4);
+            if (p.length >= 4) {
+                String user      = p[2];
+                String newStatus = p[3].toUpperCase();
+                updateUserStatus(user, newStatus);
+            }
 
+            // ── Wrong password response from server ───────────────────────────
+        } else if (line.equals(Protocol.R_AUTH_FAIL)) {
+            JOptionPane.showMessageDialog(this,
+                    "Incorrect password for this username.",
+                    "Auth Failed", JOptionPane.ERROR_MESSAGE);
+        }
+        // ─────────────────────────────────────────────────────────────────
     }
 
     private void onDisconnect() {
         SwingUtilities.invokeLater(() -> {
-            if (serverShutdown) return; // already handled cleanly, skip second dialog
+            if (serverShutdown) return;
             resetUptime();
             log("Connection lost.");
             JOptionPane.showMessageDialog(this,
@@ -514,7 +522,6 @@ public class ClientGUI extends JFrame {
 
     private void sendMessage() {
         String text = msgInput.getText().trim();
-        // Treat placeholder as empty
         Object phObj = msgInput.getClientProperty("placeholder");
         if (phObj != null) {
             String ph = phObj.toString();
@@ -525,13 +532,11 @@ public class ClientGUI extends JFrame {
         if (client == null || !client.isConnected()) return;
         client.sendMessage(currentRoom, text);
         msgInput.setText("");
-
     }
 
     private void sendPrivate() {
         String target = (String) pmTargetCombo.getSelectedItem();
         String text   = pmInput.getText().trim();
-        // Treat placeholder as empty
         Object phObj = pmInput.getClientProperty("placeholder");
         if (phObj != null) {
             String ph = phObj.toString();
@@ -544,7 +549,6 @@ public class ClientGUI extends JFrame {
         String ts = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"));
         pmArea.append("[" + ts + "] Me → " + target + ": " + text + "\n");
         pmInput.setText("");
-
     }
 
     private void switchRoom(String room) {
@@ -555,11 +559,10 @@ public class ClientGUI extends JFrame {
         }
     }
 
-    // FIX #1: append to master list AND apply current filter
     private void appendChat(String user, String time, String msg) {
         String line = "[" + time + "] " + user + ": " + msg;
         allChatLines.add(line);
-        filterChat(); // re-render so search stays active
+        filterChat();
     }
 
     private void appendSystem(String text) {
@@ -568,7 +571,6 @@ public class ClientGUI extends JFrame {
         filterChat();
     }
 
-    // FIX #1: re-render chat area showing only lines matching the search term
     private void filterChat() {
         String query = searchBox.getText().trim();
         Object placeholder = searchBox.getClientProperty("placeholder");
@@ -592,13 +594,11 @@ public class ClientGUI extends JFrame {
         statusBar.setText("   [" + ts + "] " + text);
     }
 
-    // FIX #2: clear both the user sidebar and the PM target combo
     private void clearUserList() {
         userListModel.clear();
         pmTargetCombo.removeAllItems();
     }
 
-    // FIX #2: remove a single user when USER_LEFT is received
     private void removeUserFromList(String username) {
         for (int i = 0; i < userListModel.size(); i++) {
             if (userListModel.get(i).contains("|" + username)) {
@@ -674,9 +674,7 @@ public class ClientGUI extends JFrame {
 
     private JTextField styledField(String defaultValue) {
         JTextField f = new JTextField(defaultValue);
-        // store placeholder so callers can distinguish it from real input
         f.putClientProperty("placeholder", defaultValue);
-        // render placeholder as muted until user focuses
         f.setBackground(BG_SURFACE);
         f.setForeground(TEXT_MUTED);
         f.setCaretColor(ACCENT);
@@ -685,7 +683,6 @@ public class ClientGUI extends JFrame {
                 BorderFactory.createLineBorder(BORDER_CLR),
                 BorderFactory.createEmptyBorder(4, 8, 4, 8)));
 
-        // Clear placeholder on first focus; restore if left empty on focus lost
         f.addFocusListener(new FocusAdapter() {
             @Override public void focusGained(FocusEvent e) {
                 Object ph = f.getClientProperty("placeholder");
@@ -747,10 +744,8 @@ public class ClientGUI extends JFrame {
     }
 
     private void updateUserStatus(String username, String newStatus) {
-        // Update the sidebar list entry in-place
         for (int i = 0; i < userListModel.size(); i++) {
             String entry = userListModel.get(i);
-            // Entries are stored as "STATUS|username"
             if (entry.contains("|" + username)) {
                 userListModel.set(i, newStatus + "|" + username);
                 break;

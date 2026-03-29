@@ -50,7 +50,10 @@ public class ChatClient {
     }
 
     public void sendCommand(String command) { if (out != null) out.println(command); }
-    public void login(String username)      { sendCommand(Protocol.HELLO + " " + username); }
+    public void login(String username) { login(username, ""); }
+    public void login(String username, String password) {
+        sendCommand(Protocol.HELLO + " " + username + (password.isEmpty() ? "" : " " + password));
+    }
     public void joinRoom(String room)       { sendCommand(Protocol.JOIN  + " " + room); }
     public void sendMessage(String room, String message) { sendCommand(Protocol.MSG + " " + room + " " + message); }
     public void sendPrivate(String target, String message) { sendCommand(Protocol.PM + " " + target + " " + message); }

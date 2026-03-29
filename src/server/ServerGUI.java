@@ -57,6 +57,7 @@ public class ServerGUI extends JFrame {
     private final Set<String> retainedUserSelection = new HashSet<>();
     private long retainedUserSelectionUntilMs = 0L;
     private boolean restoringUserSelection = false;
+    private JTextField tfPass;
 
     public ServerGUI() {
         super("ChatLite Server Console");
@@ -138,7 +139,7 @@ public class ServerGUI extends JFrame {
         lbl.setBorder(BorderFactory.createEmptyBorder(0, 0, 6, 0));
 
         tfNewUser = styledField("Username");
-        JTextField tfPass = styledField("Password");
+        tfPass = styledField("Password");
         JButton btnCreate = styledBtn("Create User", BG_BTN_GREEN);
         btnCreate.setForeground(new Color(225, 238, 210));
         btnCreate.addActionListener(e -> createUser());
@@ -389,9 +390,34 @@ public class ServerGUI extends JFrame {
 
     private void createUser() {
         String name = tfNewUser.getText().trim();
-        if (name.isEmpty()) return;
-        appendLog("User account created: " + name);
-        tfNewUser.setText("");
+        String pass = tfPass.getText().trim();
+
+        // Treat placeholder text as empty
+        Object phName = tfNewUser.getClientProperty("placeholder");
+        Object phPass = tfPass.getClientProperty("placeholder");
+        if (phName != null && name.equals(phName.toString())) name = "";
+        if (phPass != null && pass.equals(phPass.toString())) pass = "";
+
+        if (name.isEmpty()) {
+            appendLog("Create user failed: username is empty.");
+            return;
+        }
+
+        boolean ok = server.registerUser(name, pass);
+        if (!ok) {
+            appendLog("Create user failed: '" + name + "' already exists.");
+            return;
+        }
+
+        // Immediately add to the existing users sidebar
+        existingUsersModel.addElement("○  " + name);
+        appendLog("User created: " + name + (pass.isEmpty() ? " (no password)" : " (password set)"));
+
+        // Clear the input fields
+        tfNewUser.setText((String) tfNewUser.getClientProperty("placeholder"));
+        tfNewUser.setForeground(new Color(145, 135, 118)); // TEXT_MUTED
+        tfPass.setText((String) tfPass.getClientProperty("placeholder"));
+        tfPass.setForeground(new Color(145, 135, 118));
     }
 
     private void deleteSelected() {

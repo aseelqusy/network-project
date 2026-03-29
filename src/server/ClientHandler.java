@@ -72,8 +72,17 @@ public class ClientHandler implements Runnable {
     private void handleHello(String[] parts) {
         if (parts.length < 2) { send(Protocol.R_ERROR + ": Usage: HELLO <username>"); return; }
         String name = parts[1].trim();
+
+        // Password is the third token if provided
+        String password = parts.length >= 3 ? parts[2].trim() : "";
+
         if (server.isUsernameTaken(name)) {
             send(Protocol.R_NAME_TAKEN);
+            return;
+        }
+        // If this user was pre-registered by admin, validate the password
+        if (server.isRegistered(name) && !server.validatePassword(name, password)) {
+            send(Protocol.R_AUTH_FAIL);
             return;
         }
         this.username = name;

@@ -35,4 +35,5 @@ public class Protocol {
     public static final String SERVER_HOST      = "10.250.162.140";
     public static final String DEFAULT_ROOM     = "General";
     public static final int    MAX_MSG_SIZE     = 65536;
+    public static final String R_AUTH_FAIL = "402 AUTH FAIL";
 }

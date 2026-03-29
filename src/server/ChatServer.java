@@ -32,6 +32,8 @@ public class ChatServer {
     private int           maxMsgSize = Protocol.MAX_MSG_SIZE;
 
     private Consumer<String> logCallback;
+    // ADD this field with the other maps at the top of the class:
+    private final Map<String, String> registeredUsers = new ConcurrentHashMap<>();
 
     // ─── Lifecycle ────────────────────────────────────────────────────────────
 
@@ -223,5 +225,31 @@ public class ChatServer {
         String entry = "[" + ts + "] " + message;
         System.out.println(entry);
         if (logCallback != null) logCallback.accept(entry);
+    }
+    // ─── User Registry (pre-registered accounts) ──────────────────────────────
+
+    public boolean registerUser(String username, String password) {
+        if (username == null || username.isBlank()) return false;
+        if (registeredUsers.containsKey(username)) return false; // already exists
+        registeredUsers.put(username, password);
+        return true;
+    }
+
+    public boolean isRegistered(String username) {
+        return registeredUsers.containsKey(username);
+    }
+
+    public boolean validatePassword(String username, String password) {
+        String stored = registeredUsers.get(username);
+        if (stored == null) return true;   // no password set → allow freely
+        return stored.equals(password);
+    }
+
+    public Set<String> getRegisteredUsers() {
+        return Collections.unmodifiableSet(registeredUsers.keySet());
+    }
+
+    public boolean removeRegisteredUser(String username) {
+        return registeredUsers.remove(username) != null;
     }
 }
