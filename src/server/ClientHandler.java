@@ -88,6 +88,7 @@ public class ClientHandler implements Runnable {
         this.username = name;
         server.registerClient(name, this);
         send(Protocol.R_WELCOME);
+        send(Protocol.R_MAX_MSG_SIZE + " " + server.getMaxMsgSize());
         server.log("User connected: " + name + " from " + socket.getInetAddress().getHostAddress());
     }
 

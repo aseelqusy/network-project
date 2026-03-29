@@ -58,6 +58,7 @@ public class ClientGUI extends JFrame {
     private long              connectionStartTime;
     private Timer             uptimeTimer;
     private boolean serverShutdown = false;
+    private int serverMaxMsgSize = Protocol.MAX_MSG_SIZE;
 
     public ClientGUI() {
         super("ChatLite Client");
@@ -110,6 +111,17 @@ public class ClientGUI extends JFrame {
         stLbl.setFont(new Font("SansSerif", Font.PLAIN, 11));
 
         JComboBox<String> stCombo = styledCombo(new String[]{"ACTIVE","BUSY","AWAY"});
+        stCombo.setForeground(Color.BLACK);
+        stCombo.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(
+                    JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                JLabel label = (JLabel) super.getListCellRendererComponent(
+                        list, value, index, isSelected, cellHasFocus);
+                label.setForeground(Color.BLACK);
+                return label;
+            }
+        });
         stCombo.addActionListener(e -> {
             if (client != null && client.isConnected())
                 client.setStatus((String) stCombo.getSelectedItem());
@@ -153,9 +165,7 @@ public class ClientGUI extends JFrame {
                 switchRoom(roomList.getSelectedValue());
         });
 
-        userListModel.addElement("ACTIVE|Ahmed");
-        userListModel.addElement("BUSY|Sara");
-        userListModel.addElement("AWAY|Mohammed");
+        
         styleList(userList);
         userList.setCellRenderer(new UserRenderer());
 
@@ -254,6 +264,17 @@ public class ClientGUI extends JFrame {
         pmSP.getViewport().setBackground(new Color(22, 20, 18));
 
         pmTargetCombo = styledCombo(new String[]{});
+        pmTargetCombo.setForeground(Color.BLACK);
+        pmTargetCombo.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(
+                    JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                JLabel label = (JLabel) super.getListCellRendererComponent(
+                        list, value, index, isSelected, cellHasFocus);
+                label.setForeground(Color.BLACK);
+                return label;
+            }
+        });
         JLabel toLbl = new JLabel("To:");
         toLbl.setForeground(TEXT_MUTED);
         toLbl.setFont(new Font("SansSerif", Font.PLAIN, 11));
@@ -312,7 +333,7 @@ public class ClientGUI extends JFrame {
 
     private void showLoginDialog() {
         JDialog d = new JDialog(this, "Connect", true);
-        d.setSize(340, 270);
+        d.setSize(340, 240);
         d.setLocationRelativeTo(this);
         d.getContentPane().setBackground(BG_PANEL);
         d.setLayout(new GridBagLayout());
@@ -326,12 +347,9 @@ public class ClientGUI extends JFrame {
         title.setFont(new Font("SansSerif", Font.BOLD, 15));
         gc.gridx=0; gc.gridy=0; gc.gridwidth=2; d.add(title, gc);
 
-        JTextField tfHost = styledField(Protocol.SERVER_HOST);
         JTextField tfUser = styledField("Username");
 
-        gc.gridwidth=1; gc.gridy=1; gc.gridx=0; d.add(muted("Server IP:"), gc);
-        gc.gridx=1; d.add(tfHost, gc);
-        gc.gridy=2; gc.gridx=0; d.add(muted("Username:"), gc);
+        gc.gridwidth=1; gc.gridy=1; gc.gridx=0; d.add(muted("Username:"), gc);
         gc.gridx=1; d.add(tfUser, gc);
 
         // ── Password field ────────────────────────────────────────────────────
@@ -344,22 +362,21 @@ public class ClientGUI extends JFrame {
                 BorderFactory.createLineBorder(BORDER_CLR),
                 BorderFactory.createEmptyBorder(4, 8, 4, 8)));
 
-        gc.gridy=3; gc.gridx=0; d.add(muted("Password:"), gc);
+        gc.gridy=2; gc.gridx=0; d.add(muted("Password:"), gc);
         gc.gridx=1; d.add(tfPassword, gc);
         // ─────────────────────────────────────────────────────────────────────
 
         JButton btnConn = styledBtn("  Connect  ", BG_BTN_SEND);
         btnConn.setForeground(new Color(225, 238, 210));
-        gc.gridy=4; gc.gridx=0; gc.gridwidth=2; d.add(btnConn, gc);
+        gc.gridy=3; gc.gridx=0; gc.gridwidth=2; d.add(btnConn, gc);
 
         btnConn.addActionListener(e -> {
-            String host = tfHost.getText().trim();
+            String host = Protocol.SERVER_HOST;
             String user = tfUser.getText().trim();
 
             Object phUser = tfUser.getClientProperty("placeholder");
             if (phUser != null && user.equals(phUser.toString())) user = "";
 
-            if (host.isEmpty()) host = Protocol.SERVER_HOST;
 
             if (user.isEmpty()) {
                 JOptionPane.showMessageDialog(d,
@@ -470,6 +487,21 @@ public class ClientGUI extends JFrame {
             JOptionPane.showMessageDialog(this,
                     "Username already taken!", "Error", JOptionPane.ERROR_MESSAGE);
 
+        } else if (line.startsWith(Protocol.R_MAX_MSG_SIZE)) {
+            String[] p = line.split(" ");
+            if (p.length >= 3) {
+                try {
+                    serverMaxMsgSize = Integer.parseInt(p[2]);
+                } catch (NumberFormatException ignored) {
+                    serverMaxMsgSize = Protocol.MAX_MSG_SIZE;
+                }
+            }
+
+        } else if (line.startsWith(Protocol.R_ERROR) && line.contains("Message too large")) {
+            JOptionPane.showMessageDialog(this,
+                    "Message is too large. Max allowed is " + serverMaxMsgSize + " characters.",
+                    "Message Too Large", JOptionPane.WARNING_MESSAGE);
+
         } else if (line.startsWith(Protocol.R_STATUS_UPDATE)) {
             // "216 STATUS <username> <newStatus>"
             String[] p = line.split(" ", 4);
@@ -545,6 +577,7 @@ public class ClientGUI extends JFrame {
         myUsername  = "";
         currentRoom = Protocol.DEFAULT_ROOM;
         client      = null;
+        serverMaxMsgSize = Protocol.MAX_MSG_SIZE;
 
         // Clear UI
         chatArea.setText("");
@@ -602,6 +635,12 @@ public class ClientGUI extends JFrame {
             if (text.isEmpty()) return;
         }
         if (client == null || !client.isConnected()) return;
+        if (text.length() > serverMaxMsgSize) {
+            JOptionPane.showMessageDialog(this,
+                    "Message is too large. Max allowed is " + serverMaxMsgSize + " characters.",
+                    "Message Too Large", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
         client.sendMessage(currentRoom, text);
         msgInput.setText("");
     }

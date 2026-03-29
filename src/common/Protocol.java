@@ -27,6 +27,7 @@ public class Protocol {
     public static final String R_USER_JOINED    = "USER_JOINED";
     public static final String R_USER_LEFT      = "USER_LEFT";
     public static final String R_STATUS_UPDATE  = "216 STATUS";
+    public static final String R_MAX_MSG_SIZE   = "217 MAX_MSG_SIZE";
     public static final String R_SERVER_SHUTDOWN = "400 SHUTDOWN";
     public static final String R_KICKED         = "400 KICKED";
     public static final String R_ERROR          = "400 ERROR";

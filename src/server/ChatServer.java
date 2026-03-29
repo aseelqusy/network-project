@@ -211,7 +211,10 @@ public class ChatServer {
     }
 
     public int getMaxMsgSize()          { return maxMsgSize; }
-    public void setMaxMsgSize(int size) { this.maxMsgSize = size; }
+    public void setMaxMsgSize(int size) {
+        this.maxMsgSize = size;
+        broadcastAll(Protocol.R_MAX_MSG_SIZE + " " + size);
+    }
     public boolean isRunning()          { return running; }
     public Map<String, ClientHandler> getClients() { return Collections.unmodifiableMap(clients); }
 

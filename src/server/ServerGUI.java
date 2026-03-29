@@ -293,6 +293,17 @@ public class ServerGUI extends JFrame {
         lbl.setForeground(TEXT_MUTED);
         lbl.setFont(new Font("SansSerif", Font.PLAIN, 11));
         cbMaxMsg = styledCombo(new String[]{"64 KB","32 KB","16 KB","128 KB"});
+        cbMaxMsg.setForeground(Color.BLACK);
+        cbMaxMsg.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(
+                    JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                JLabel label = (JLabel) super.getListCellRendererComponent(
+                        list, value, index, isSelected, cellHasFocus);
+                label.setForeground(Color.BLACK);
+                return label;
+            }
+        });
         cbMaxMsg.setPreferredSize(new Dimension(80, 26));
 
         // FIX #3: Apply button now actually calls server.setMaxMsgSize()
