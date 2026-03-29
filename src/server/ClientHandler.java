@@ -151,7 +151,7 @@ public class ClientHandler implements Runnable {
         send(Protocol.R_USERS + " " + users.size());
         for (String u : users) {
             String status = server.getUserStatus(u);
-            send(Protocol.R_USERS_ENTRY + " " + u + " " + status);
+            send(Protocol.R_USERS_ENTRY + " " + u);
         }
         send(Protocol.R_USERS_END);
     }

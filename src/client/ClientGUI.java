@@ -56,6 +56,9 @@ public class ClientGUI extends JFrame {
     private JTextField        pmInput       = new JTextField();
     private JLabel            statusBar;
     private JLabel            connLabel;
+    private JLabel            lblUptime;
+    private long              connectionStartTime;
+    private Timer             uptimeTimer;
 
     public ClientGUI() {
         super("ChatLite Client");
@@ -72,10 +75,14 @@ public class ClientGUI extends JFrame {
 
         addWindowListener(new WindowAdapter() {
             @Override public void windowClosing(WindowEvent e) {
+                resetUptime();
                 if (client != null && client.isConnected()) client.disconnect();
                 System.exit(0);
             }
         });
+
+        uptimeTimer = new Timer(1000, e -> updateUptime());
+        uptimeTimer.start();
 
         SwingUtilities.invokeLater(this::showLoginDialog);
     }
@@ -95,6 +102,10 @@ public class ClientGUI extends JFrame {
         connLabel.setForeground(TEXT_MUTED);
         connLabel.setFont(new Font("Monospaced", Font.PLAIN, 11));
 
+        lblUptime = new JLabel("Uptime: 00:00:00");
+        lblUptime.setForeground(TEXT_MUTED);
+        lblUptime.setFont(new Font("Monospaced", Font.PLAIN, 11));
+
         JLabel stLbl = new JLabel("Status:");
         stLbl.setForeground(TEXT_MUTED);
         stLbl.setFont(new Font("SansSerif", Font.PLAIN, 11));
@@ -106,6 +117,8 @@ public class ClientGUI extends JFrame {
         });
 
         p.add(title); p.add(connLabel);
+        p.add(Box.createHorizontalStrut(8));
+        p.add(lblUptime);
         p.add(Box.createHorizontalStrut(16));
         p.add(stLbl); p.add(stCombo);
         return p;
@@ -439,6 +452,8 @@ public class ClientGUI extends JFrame {
             appendSystem("← " + u + " left");
             // USER_LEFT is room-scoped (switch/leave/disconnect), so do not alter global online list here.
         } else if (line.equals(Protocol.R_WELCOME)) {
+            connectionStartTime = System.currentTimeMillis();
+            updateUptime();
             appendSystem("Welcome, " + myUsername + "! You are in #" + currentRoom);
 
         } else if (line.equals(Protocol.R_NAME_TAKEN)) {
@@ -449,10 +464,26 @@ public class ClientGUI extends JFrame {
 
     private void onDisconnect() {
         SwingUtilities.invokeLater(() -> {
+            resetUptime();
             log("Connection lost.");
             JOptionPane.showMessageDialog(this,
                     "Disconnected from server.", "Disconnected", JOptionPane.WARNING_MESSAGE);
         });
+    }
+
+    private void updateUptime() {
+        if (lblUptime == null) return;
+        if (connectionStartTime == 0) {
+            lblUptime.setText("Uptime: 00:00:00");
+            return;
+        }
+        long s = (System.currentTimeMillis() - connectionStartTime) / 1000;
+        lblUptime.setText(String.format("Uptime: %02d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60));
+    }
+
+    private void resetUptime() {
+        connectionStartTime = 0;
+        updateUptime();
     }
 
     // ─── Actions ──────────────────────────────────────────────────────────────
@@ -470,8 +501,7 @@ public class ClientGUI extends JFrame {
         if (client == null || !client.isConnected()) return;
         client.sendMessage(currentRoom, text);
         msgInput.setText("");
-        // restore placeholder immediately if field loses focus
-        if (phObj != null) msgInput.setText(phObj.toString());
+
     }
 
     private void sendPrivate() {
@@ -490,7 +520,7 @@ public class ClientGUI extends JFrame {
         String ts = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"));
         pmArea.append("[" + ts + "] Me → " + target + ": " + text + "\n");
         pmInput.setText("");
-        if (phObj != null) pmInput.setText(phObj.toString());
+
     }
 
     private void switchRoom(String room) {
