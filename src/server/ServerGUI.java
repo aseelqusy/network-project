@@ -343,8 +343,9 @@ public class ServerGUI extends JFrame {
 
     private void startServer() {
         try {
+            String bindHost = Protocol.SERVER_HOST;
             server.setLogCallback(msg -> SwingUtilities.invokeLater(() -> appendLog(msg)));
-            server.start(Protocol.SERVER_PORT);
+            server.start(bindHost, Protocol.SERVER_PORT);
             startTime = System.currentTimeMillis();
             lblStatus.setText("● ONLINE");
             lblStatus.setForeground(STATUS_ACTIVE);

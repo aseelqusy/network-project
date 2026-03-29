@@ -59,6 +59,8 @@ public class ClientGUI extends JFrame {
     private JLabel            lblUptime;
     private long              connectionStartTime;
     private Timer             uptimeTimer;
+    // near: private String currentRoom = Protocol.DEFAULT_ROOM;
+    private boolean serverShutdown = false;
 
     public ClientGUI() {
         super("ChatLite Client");
@@ -329,7 +331,7 @@ public class ClientGUI extends JFrame {
         title.setFont(new Font("SansSerif", Font.BOLD, 15));
         gc.gridx=0; gc.gridy=0; gc.gridwidth=2; d.add(title, gc);
 
-        JTextField tfHost = styledField("127.0.0.1");
+        JTextField tfHost = styledField(Protocol.SERVER_HOST);
         JTextField tfUser = styledField("Username");
 
         gc.gridwidth=1; gc.gridy=1; gc.gridx=0; d.add(muted("Server IP:"), gc);
@@ -349,8 +351,8 @@ public class ClientGUI extends JFrame {
             Object phUser = tfUser.getClientProperty("placeholder");
             if (phUser != null && user.equals(phUser.toString())) user = "";
 
-            // Keep localhost as a usable default when host is left blank.
-            if (host.isEmpty()) host = "127.0.0.1";
+            // Keep configured server host as default when host is left blank.
+            if (host.isEmpty()) host = Protocol.SERVER_HOST;
 
             if (user.isEmpty()) {
                 JOptionPane.showMessageDialog(d,
@@ -389,6 +391,16 @@ public class ClientGUI extends JFrame {
     }
 
     private void process(String line) {
+        if (line.equals(Protocol.R_SERVER_SHUTDOWN)) {
+            serverShutdown = true;
+            if (client != null && client.isConnected()) client.disconnect();
+            JOptionPane.showMessageDialog(this,
+                    "The server has been shut down by the administrator.\nThis window will now close.",
+                    "Server Closed",
+                    JOptionPane.WARNING_MESSAGE);
+            dispose();
+            return;
+        }
         if (line.equals(Protocol.R_KICKED)) {
             JOptionPane.showMessageDialog(this,
                     "Your account was deleted by the server admin.",
@@ -460,10 +472,22 @@ public class ClientGUI extends JFrame {
             JOptionPane.showMessageDialog(this,
                     "Username already taken!", "Error", JOptionPane.ERROR_MESSAGE);
         }
+
+     else if (line.startsWith(Protocol.R_STATUS_UPDATE)) {
+        // "216 STATUS <username> <newStatus>"
+        String[] p = line.split(" ", 4);
+        if (p.length >= 4) {
+            String user      = p[2];
+            String newStatus = p[3].toUpperCase();
+            updateUserStatus(user, newStatus);
+        }
+    }
+
     }
 
     private void onDisconnect() {
         SwingUtilities.invokeLater(() -> {
+            if (serverShutdown) return; // already handled cleanly, skip second dialog
             resetUptime();
             log("Connection lost.");
             JOptionPane.showMessageDialog(this,
@@ -720,5 +744,17 @@ public class ClientGUI extends JFrame {
         try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
         catch (Exception ignored) {}
         SwingUtilities.invokeLater(() -> new ClientGUI().setVisible(true));
+    }
+
+    private void updateUserStatus(String username, String newStatus) {
+        // Update the sidebar list entry in-place
+        for (int i = 0; i < userListModel.size(); i++) {
+            String entry = userListModel.get(i);
+            // Entries are stored as "STATUS|username"
+            if (entry.contains("|" + username)) {
+                userListModel.set(i, newStatus + "|" + username);
+                break;
+            }
+        }
     }
 }

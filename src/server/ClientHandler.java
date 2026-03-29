@@ -180,6 +180,8 @@ public class ClientHandler implements Runnable {
         if (parts.length < 2) return;
         currentStatus = parts[1].toUpperCase();
         server.setUserStatus(username, currentStatus);
+        server.broadcastAll(Protocol.R_STATUS_UPDATE + " " + username + " " + currentStatus);
+        server.log("STATUS " + username + " → " + currentStatus);
     }
 
     private void handleQuit() {

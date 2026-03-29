@@ -3,6 +3,7 @@ package server;
 import common.Protocol;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.*;
@@ -35,12 +36,17 @@ public class ChatServer {
     // ─── Lifecycle ────────────────────────────────────────────────────────────
 
     public void start(int port) throws IOException {
-        serverSocket = new ServerSocket(port);
+        start("0.0.0.0", port);
+    }
+
+    public void start(String host, int port) throws IOException {
+        InetAddress bindAddress = InetAddress.getByName(host);
+        serverSocket = new ServerSocket(port, 50, bindAddress);
         running = true;
         rooms.put(Protocol.DEFAULT_ROOM, ConcurrentHashMap.newKeySet());
         rooms.put("Networks", ConcurrentHashMap.newKeySet());
         rooms.put("Java", ConcurrentHashMap.newKeySet());
-        log("Server started on TCP port " + port);
+        log("Server started on " + bindAddress.getHostAddress() + ":" + port);
 
         pool.submit(() -> {
             while (running) {
@@ -58,6 +64,10 @@ public class ChatServer {
 
     public void stop() {
         running = false;
+        // Notify all connected clients before closing
+        broadcastAll(Protocol.R_SERVER_SHUTDOWN);
+        // Give clients a moment to receive the message before sockets close
+        try { Thread.sleep(300); } catch (InterruptedException ignored) {}
         try { if (serverSocket != null) serverSocket.close(); } catch (IOException ignored) {}
         pool.shutdownNow();
         log("Server stopped.");
