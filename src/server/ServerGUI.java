@@ -12,6 +12,10 @@ import java.awt.event.WindowEvent;
 import java.io.*;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 public class ServerGUI extends JFrame {
 
@@ -47,6 +51,12 @@ public class ServerGUI extends JFrame {
     private JList<String>     existingUsersList;
     private JComboBox<String> cbMaxMsg;
     private JTextField        tfBroadcast;
+
+    // Keep user-list selection across refreshes for up to 10 minutes.
+    private static final long USER_SELECTION_HOLD_MS = 10L * 60L * 1000L;
+    private final Set<String> retainedUserSelection = new HashSet<>();
+    private long retainedUserSelectionUntilMs = 0L;
+    private boolean restoringUserSelection = false;
 
     public ServerGUI() {
         super("ChatLite Server Console");
@@ -138,6 +148,12 @@ public class ServerGUI extends JFrame {
         addPanel.add(tfNewUser); addPanel.add(tfPass); addPanel.add(btnCreate);
 
         existingUsersList = new JList<>(existingUsersModel);
+        existingUsersList.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
+        existingUsersList.addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting() && !restoringUserSelection) {
+                rememberUserSelection();
+            }
+        });
         existingUsersList.setBackground(BG_SURFACE);
         existingUsersList.setForeground(TEXT_PRIMARY);
         existingUsersList.setFont(new Font("Monospaced", Font.PLAIN, 12));
@@ -346,12 +362,18 @@ public class ServerGUI extends JFrame {
 
     private void refreshSessions() {
         sessionsModel.setRowCount(0);
+
+        // Snapshot current selected users before replacing list contents.
+        rememberUserSelection();
+
         existingUsersModel.clear();
         server.getClients().forEach((name, handler) -> {
             String status = server.getUserStatus(name);
             sessionsModel.addRow(new Object[]{name, status, handler.getIP()});
             existingUsersModel.addElement("○  " + name);
         });
+
+        restoreUserSelectionIfActive();
     }
 
     // FIX #4: populate mailbox table from real per-user counters in ChatServer
@@ -372,19 +394,35 @@ public class ServerGUI extends JFrame {
     }
 
     private void deleteSelected() {
-        String sel = existingUsersList.getSelectedValue();
-        if (sel == null) return;
-        String name = sel.replace("○  ", "").trim();
-        server.kickUser(name);
-        appendLog("Kicked/deleted user: " + name);
+        List<String> selectedEntries = existingUsersList.getSelectedValuesList();
+        if (selectedEntries.isEmpty()) {
+            appendLog("Delete skipped: no user selected.");
+            return;
+        }
+
+        int deleted = 0;
+        for (String entry : selectedEntries) {
+            String name = extractUserName(entry);
+            boolean kicked = server.kickUser(name);
+            if (kicked) {
+                deleted++;
+                appendLog("Kicked/deleted user: " + name);
+            } else {
+                appendLog("Delete failed: user not online (" + name + ")");
+            }
+        }
+        appendLog("Delete summary: " + deleted + "/" + selectedEntries.size() + " user(s) removed.");
     }
 
     private void kickSelected(JTable tbl) {
         int row = tbl.getSelectedRow();
-        if (row < 0) return;
+        if (row < 0) {
+            appendLog("Kick skipped: no session selected.");
+            return;
+        }
         String name = (String) sessionsModel.getValueAt(row, 0);
-        server.kickUser(name);
-        appendLog("Kicked: " + name);
+        boolean kicked = server.kickUser(name);
+        appendLog(kicked ? "Kicked: " + name : "Kick failed: user not online (" + name + ")");
     }
 
     private void sendBroadcast() {
@@ -428,6 +466,48 @@ public class ServerGUI extends JFrame {
         String ts = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
         logArea.append("[" + ts + "] " + msg + "\n");
         logArea.setCaretPosition(logArea.getDocument().getLength());
+    }
+
+    private void rememberUserSelection() {
+        if (existingUsersList == null) return;
+        List<String> selectedEntries = existingUsersList.getSelectedValuesList();
+        retainedUserSelection.clear();
+        for (String entry : selectedEntries) {
+            retainedUserSelection.add(extractUserName(entry));
+        }
+        retainedUserSelectionUntilMs = System.currentTimeMillis() + USER_SELECTION_HOLD_MS;
+    }
+
+    private void restoreUserSelectionIfActive() {
+        if (existingUsersList == null) return;
+
+        long now = System.currentTimeMillis();
+        if (retainedUserSelection.isEmpty() || now > retainedUserSelectionUntilMs) {
+            retainedUserSelection.clear();
+            return;
+        }
+
+        List<Integer> indices = new ArrayList<>();
+        for (int i = 0; i < existingUsersModel.size(); i++) {
+            String username = extractUserName(existingUsersModel.getElementAt(i));
+            if (retainedUserSelection.contains(username)) {
+                indices.add(i);
+            }
+        }
+
+        restoringUserSelection = true;
+        try {
+            existingUsersList.clearSelection();
+            for (Integer idx : indices) {
+                existingUsersList.addSelectionInterval(idx, idx);
+            }
+        } finally {
+            restoringUserSelection = false;
+        }
+    }
+
+    private String extractUserName(String entry) {
+        return entry.replace("○  ", "").trim();
     }
 
     private void updateUptime() {

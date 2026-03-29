@@ -190,12 +190,12 @@ public class ChatServer {
 
     // ─── Admin ────────────────────────────────────────────────────────────────
 
-    public void kickUser(String username) {
+    public boolean kickUser(String username) {
         ClientHandler h = clients.get(username);
-        if (h != null) {
-            h.send("400 KICKED");
-            removeClient(username);
-        }
+        if (h == null) return false;
+        h.kickByAdmin();
+        log("Admin deleted user: " + username);
+        return true;
     }
 
     public int getMaxMsgSize()          { return maxMsgSize; }

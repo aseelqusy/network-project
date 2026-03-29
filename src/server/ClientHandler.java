@@ -20,6 +20,7 @@ public class ClientHandler implements Runnable {
     private       PrintWriter      out;
     private       String           username;
     private       String           currentStatus = "ACTIVE";
+    private volatile boolean       disconnected  = false;
     private static final DateTimeFormatter TIME_FMT =
             DateTimeFormatter.ofPattern("HH:mm:ss");
 
@@ -192,17 +193,31 @@ public class ClientHandler implements Runnable {
         if (out != null) out.println(message);
     }
 
+    public void kickByAdmin() {
+        send(Protocol.R_KICKED);
+        disconnect(false);
+    }
+
     private boolean isLoggedIn() {
         if (username == null) { send(Protocol.R_ERROR + ": Not logged in. Use HELLO first."); return false; }
         return true;
     }
 
-    private void disconnect() {
+    private synchronized void disconnect(boolean logDisconnect) {
+        if (disconnected) return;
+        disconnected = true;
+
         if (username != null) {
             server.removeClient(username);
-            server.log("User disconnected: " + username);
+            if (logDisconnect) {
+                server.log("User disconnected: " + username);
+            }
         }
         try { if (socket != null && !socket.isClosed()) socket.close(); } catch (IOException ignored) {}
+    }
+
+    private void disconnect() {
+        disconnect(true);
     }
 
     public String getUsername()     { return username; }

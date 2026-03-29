@@ -26,6 +26,7 @@ public class Protocol {
     public static final String R_PRIVATE        = "PM";
     public static final String R_USER_JOINED    = "USER_JOINED";
     public static final String R_USER_LEFT      = "USER_LEFT";
+    public static final String R_KICKED         = "400 KICKED";
     public static final String R_ERROR          = "400 ERROR";
 
     public static final int    SERVER_PORT      = 5000;

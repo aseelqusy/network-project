@@ -376,6 +376,17 @@ public class ClientGUI extends JFrame {
     }
 
     private void process(String line) {
+        if (line.equals(Protocol.R_KICKED)) {
+            JOptionPane.showMessageDialog(this,
+                    "Your account was deleted by the server admin.",
+                    "Disconnected",
+                    JOptionPane.WARNING_MESSAGE);
+            if (client != null && client.isConnected()) client.disconnect();
+            dispose();
+            System.exit(0);
+            return;
+        }
+
         if (line.startsWith(Protocol.R_MESSAGE)) {
             // MSG <room> <username> <timestamp> <text>
             String[] p = line.split(" ", 5);
