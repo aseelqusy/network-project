@@ -8,10 +8,6 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Set;
 
-/**
- * ClientHandler runs in its own Thread for each connected client.
- * It reads commands line by line and delegates to ChatServer.
- */
 public class ClientHandler implements Runnable {
 
     private final Socket           socket;
@@ -40,13 +36,10 @@ public class ClientHandler implements Runnable {
                 handleCommand(line.trim());
             }
         } catch (IOException e) {
-            // client disconnected abruptly
         } finally {
             disconnect();
         }
     }
-
-    // ─── Command Dispatcher ───────────────────────────────────────────────────
 
     private void handleCommand(String line) {
         if (line.isEmpty()) return;
@@ -67,20 +60,16 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    // ─── Handlers ─────────────────────────────────────────────────────────────
-
     private void handleHello(String[] parts) {
         if (parts.length < 2) { send(Protocol.R_ERROR + ": Usage: HELLO <username>"); return; }
         String name = parts[1].trim();
 
-        // Password is the third token if provided
         String password = parts.length >= 3 ? parts[2].trim() : "";
 
         if (server.isUsernameTaken(name)) {
             send(Protocol.R_NAME_TAKEN);
             return;
         }
-        // If this user was pre-registered by admin, validate the password
         if (server.isRegistered(name) && !server.validatePassword(name, password)) {
             send(Protocol.R_AUTH_FAIL);
             return;
@@ -104,7 +93,6 @@ public class ClientHandler implements Runnable {
 
         String previousRoom = server.getCurrentRoom(username);
         if (targetRoom.equals(previousRoom)) {
-            // No-op join; keep response so client state remains consistent.
             send(Protocol.R_JOINED + " " + targetRoom);
             return;
         }
@@ -134,7 +122,6 @@ public class ClientHandler implements Runnable {
                 Protocol.R_MESSAGE + " " + room + " " + username + " " + timestamp + " " + message,
                 null);
         send(Protocol.R_SENT);
-        // FIX #4: record the sent message in the server counters
         server.incrementSentCount(username);
         server.log("MSG [" + room + "] " + username + ": " + message);
     }
@@ -149,7 +136,6 @@ public class ClientHandler implements Runnable {
                 Protocol.R_PRIVATE + " " + username + " " + timestamp + " " + message);
         send(sent ? Protocol.R_PRIVATE_SENT : Protocol.R_ERROR + ": User not found");
         if (sent) {
-            // FIX #4: record the sent PM in the server counters
             server.incrementSentCount(username);
         }
         server.log("PM " + username + " → " + target + ": " + message);
@@ -199,7 +185,6 @@ public class ClientHandler implements Runnable {
         disconnect();
     }
 
-    // ─── Helpers ──────────────────────────────────────────────────────────────
 
     public void send(String message) {
         if (out != null) out.println(message);

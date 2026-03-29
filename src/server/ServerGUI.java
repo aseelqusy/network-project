@@ -19,7 +19,6 @@ import java.util.Set;
 
 public class ServerGUI extends JFrame {
 
-    // ── Palette ───────────────────────────────────────────────────────────────
     private static final Color BG_BASE      = new Color(28,  26,  24);
     private static final Color BG_PANEL     = new Color(36,  33,  30);
     private static final Color BG_SURFACE   = new Color(46,  42,  38);
@@ -36,10 +35,8 @@ public class ServerGUI extends JFrame {
     private static final Color STATUS_BUSY   = new Color(220, 180,  40);
     private static final Color STATUS_AWAY   = new Color(140, 138, 135);
 
-    // ── Server ────────────────────────────────────────────────────────────────
     private final ChatServer server = new ChatServer();
 
-    // ── UI ────────────────────────────────────────────────────────────────────
     private JLabel            lblStatus;
     private JLabel            lblUptime;
     private long              startTime;
@@ -52,7 +49,6 @@ public class ServerGUI extends JFrame {
     private JComboBox<String> cbMaxMsg;
     private JTextField        tfBroadcast;
 
-    // Keep user-list selection across refreshes for up to 10 minutes.
     private static final long USER_SELECTION_HOLD_MS = 10000000L;
     private final Set<String> retainedUserSelection = new HashSet<>();
     private long retainedUserSelectionUntilMs = 0L;
@@ -78,7 +74,6 @@ public class ServerGUI extends JFrame {
 
         startServer();
 
-        // Refresh sessions AND mailbox stats every 2 seconds
         new Timer(2000, e -> {
             refreshSessions();
             refreshMailbox();
@@ -87,8 +82,6 @@ public class ServerGUI extends JFrame {
         }).start();
         new Timer(1000, e -> updateUptime()).start();
     }
-
-    // ─── Builders ─────────────────────────────────────────────────────────────
 
     private JPanel buildStatusBar() {
         JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 14, 7));
@@ -253,7 +246,6 @@ public class ServerGUI extends JFrame {
         p.setBackground(BG_BASE);
         p.setBorder(titledBorder("MESSAGE STATISTICS"));
 
-        // FIX #4: columns now show real live data (sent, received, total)
         String[] cols = {"User", "Sent", "Received", "Total"};
         mailboxModel = new DefaultTableModel(cols, 0) {
             @Override public boolean isCellEditable(int r, int c) { return false; }
@@ -306,7 +298,6 @@ public class ServerGUI extends JFrame {
         });
         cbMaxMsg.setPreferredSize(new Dimension(80, 26));
 
-        // FIX #3: Apply button now actually calls server.setMaxMsgSize()
         JButton btnApply = styledBtn("Apply", BG_BTN_GREEN);
         btnApply.setForeground(new Color(225, 238, 210));
         btnApply.addActionListener(e -> applyMaxMsgSize());
@@ -336,8 +327,6 @@ public class ServerGUI extends JFrame {
         return p;
     }
 
-    // ─── Status Cell Renderer ─────────────────────────────────────────────────
-
     private class StatusCellRenderer extends DefaultTableCellRenderer {
         @Override public Component getTableCellRendererComponent(
                 JTable table, Object value, boolean sel, boolean focus, int row, int col) {
@@ -355,8 +344,6 @@ public class ServerGUI extends JFrame {
             return l;
         }
     }
-
-    // ─── Actions ──────────────────────────────────────────────────────────────
 
     private void startServer() {
         try {
@@ -385,7 +372,6 @@ public class ServerGUI extends JFrame {
         if (userSelectedPending) return;
         sessionsModel.setRowCount(0);
 
-        // Snapshot current selected users before replacing list contents.
         rememberUserSelection();
 
         existingUsersModel.clear();
@@ -398,7 +384,6 @@ public class ServerGUI extends JFrame {
         restoreUserSelectionIfActive();
     }
 
-    // FIX #4: populate mailbox table from real per-user counters in ChatServer
     private void refreshMailbox() {
         mailboxModel.setRowCount(0);
         server.getClients().keySet().forEach(name -> {
@@ -412,7 +397,6 @@ public class ServerGUI extends JFrame {
         String name = tfNewUser.getText().trim();
         String pass = tfPass.getText().trim();
 
-        // Treat placeholder text as empty
         Object phName = tfNewUser.getClientProperty("placeholder");
         Object phPass = tfPass.getClientProperty("placeholder");
         if (phName != null && name.equals(phName.toString())) name = "";
@@ -429,13 +413,11 @@ public class ServerGUI extends JFrame {
             return;
         }
 
-        // Immediately add to the existing users sidebar
         existingUsersModel.addElement("○  " + name);
         appendLog("User created: " + name + (pass.isEmpty() ? " (no password)" : " (password set)"));
 
-        // Clear the input fields
         tfNewUser.setText((String) tfNewUser.getClientProperty("placeholder"));
-        tfNewUser.setForeground(new Color(145, 135, 118)); // TEXT_MUTED
+        tfNewUser.setForeground(new Color(145, 135, 118));
         tfPass.setText((String) tfPass.getClientProperty("placeholder"));
         tfPass.setForeground(new Color(145, 135, 118));
     }
@@ -451,9 +433,9 @@ public class ServerGUI extends JFrame {
         int deleted = 0;
         for (String entry : selectedEntries) {
             String name = extractUserName(entry);
-            boolean kicked = server.kickUser(name);         // disconnect if online
-            server.removeRegisteredUser(name);              // remove from registry regardless
-            existingUsersModel.removeElement("○  " + name); // remove from sidebar immediately
+            boolean kicked = server.kickUser(name);
+            server.removeRegisteredUser(name);
+            existingUsersModel.removeElement("○  " + name);
             deleted++;
             if (kicked) {
                 appendLog("Kicked and deleted user: " + name);
@@ -485,12 +467,10 @@ public class ServerGUI extends JFrame {
         tfBroadcast.setText("");
     }
 
-    // FIX #3: parse the combo selection and call the real setter
     private void applyMaxMsgSize() {
         String selected = (String) cbMaxMsg.getSelectedItem();
         if (selected == null) return;
         try {
-            // Parse "64 KB" → 64 * 1024 bytes
             int kb = Integer.parseInt(selected.replace(" KB", "").trim());
             int bytes = kb * 1024;
             server.setMaxMsgSize(bytes);
@@ -567,7 +547,6 @@ public class ServerGUI extends JFrame {
         lblUptime.setText(String.format("Uptime: %02d:%02d:%02d", s/3600, (s%3600)/60, s%60));
     }
 
-    // ─── Style Helpers ────────────────────────────────────────────────────────
 
     private JButton styledBtn(String text, Color bg) {
         JButton b = new JButton(text);

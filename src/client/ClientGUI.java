@@ -15,7 +15,6 @@ import java.util.List;
 
 public class ClientGUI extends JFrame {
 
-    // ── Palette (warm dark — easy on eyes) ───────────────────────────────────
     private static final Color BG_BASE      = new Color(28,  26,  24);
     private static final Color BG_PANEL     = new Color(36,  33,  30);
     private static final Color BG_SURFACE   = new Color(46,  42,  38);
@@ -27,12 +26,10 @@ public class ClientGUI extends JFrame {
     private static final Color TEXT_MUTED   = new Color(145, 135, 118);
     private static final Color BORDER_CLR   = new Color(58,  52,  44);
 
-    // ── Status colours ────────────────────────────────────────────────────────
     private static final Color STATUS_ACTIVE = new Color( 80, 200,  90);
     private static final Color STATUS_BUSY   = new Color(220, 180,  40);
     private static final Color STATUS_AWAY   = new Color(140, 138, 135);
 
-    // ── State ─────────────────────────────────────────────────────────────────
     private ChatClient client;
     private String     myUsername  = "";
     private String     currentRoom = Protocol.DEFAULT_ROOM;
@@ -86,8 +83,6 @@ public class ClientGUI extends JFrame {
 
         SwingUtilities.invokeLater(this::showLoginDialog);
     }
-
-    // ─── Builders ─────────────────────────────────────────────────────────────
 
     private JPanel buildTopBar() {
         JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 14, 6));
@@ -329,8 +324,6 @@ public class ClientGUI extends JFrame {
         return p;
     }
 
-    // ─── Login Dialog ─────────────────────────────────────────────────────────
-
     private void showLoginDialog() {
         JDialog d = new JDialog(this, "Connect", true);
         d.setSize(340, 240);
@@ -352,7 +345,6 @@ public class ClientGUI extends JFrame {
         gc.gridwidth=1; gc.gridy=1; gc.gridx=0; d.add(muted("Username:"), gc);
         gc.gridx=1; d.add(tfUser, gc);
 
-        // ── Password field ────────────────────────────────────────────────────
         JPasswordField tfPassword = new JPasswordField();
         tfPassword.setBackground(BG_SURFACE);
         tfPassword.setForeground(TEXT_PRIMARY);
@@ -364,8 +356,6 @@ public class ClientGUI extends JFrame {
 
         gc.gridy=2; gc.gridx=0; d.add(muted("Password:"), gc);
         gc.gridx=1; d.add(tfPassword, gc);
-        // ─────────────────────────────────────────────────────────────────────
-
         JButton btnConn = styledBtn("  Connect  ", BG_BTN_SEND);
         btnConn.setForeground(new Color(225, 238, 210));
         gc.gridy=3; gc.gridx=0; gc.gridwidth=2; d.add(btnConn, gc);
@@ -387,10 +377,8 @@ public class ClientGUI extends JFrame {
                 client = new ChatClient(this::onServerMessage, this::onDisconnect);
                 client.connect(host, Protocol.SERVER_PORT);
                 myUsername = user;
-                // ── Send username + password to server ────────────────────
                 String password = new String(tfPassword.getPassword());
                 client.login(user, password);
-                // ─────────────────────────────────────────────────────────
                 setTitle("ChatLite  —  " + user);
                 connLabel.setText("  |  " + host + ":" + Protocol.SERVER_PORT);
                 log("Connected as " + user);
@@ -410,8 +398,6 @@ public class ClientGUI extends JFrame {
         });
         d.setVisible(true);
     }
-
-    // ─── Server Message Processing ────────────────────────────────────────────
 
     private void onServerMessage(String line) {
         SwingUtilities.invokeLater(() -> process(line));
@@ -435,13 +421,11 @@ public class ClientGUI extends JFrame {
         }
 
         if (line.startsWith(Protocol.R_MESSAGE)) {
-            // MSG <room> <username> <timestamp> <text>
             String[] p = line.split(" ", 5);
             if (p.length >= 5)
                 appendChat(p[2], p[3], p[4]);
 
         } else if (line.startsWith(Protocol.R_PRIVATE)) {
-            // PM <from> <timestamp> <text>
             String[] p = line.split(" ", 4);
             if (p.length >= 4) {
                 appendChat("PM:" + p[1], p[2], p[3]);
@@ -503,7 +487,6 @@ public class ClientGUI extends JFrame {
                     "Message Too Large", JOptionPane.WARNING_MESSAGE);
 
         } else if (line.startsWith(Protocol.R_STATUS_UPDATE)) {
-            // "216 STATUS <username> <newStatus>"
             String[] p = line.split(" ", 4);
             if (p.length >= 4) {
                 String user      = p[2];
@@ -511,13 +494,11 @@ public class ClientGUI extends JFrame {
                 updateUserStatus(user, newStatus);
             }
 
-            // ── Wrong password response from server ───────────────────────────
         } else if (line.equals(Protocol.R_AUTH_FAIL)) {
             JOptionPane.showMessageDialog(this,
                     "Incorrect password for this username.",
                     "Auth Failed", JOptionPane.ERROR_MESSAGE);
         }
-        // ─────────────────────────────────────────────────────────────────
     }
     private void showKickCountdown() {
         JDialog d = new JDialog(this, "Kicked by Admin", true);
@@ -573,13 +554,11 @@ public class ClientGUI extends JFrame {
     }
 
     private void resetAfterKick() {
-        // Reset all state
         myUsername  = "";
         currentRoom = Protocol.DEFAULT_ROOM;
         client      = null;
         serverMaxMsgSize = Protocol.MAX_MSG_SIZE;
 
-        // Clear UI
         chatArea.setText("");
         allChatLines.clear();
         userListModel.clear();
@@ -594,7 +573,6 @@ public class ClientGUI extends JFrame {
         setTitle("ChatLite Client");
         log("Disconnected — kicked by admin.");
 
-        // Re-open login dialog
         showLoginDialog();
     }
 
@@ -622,8 +600,6 @@ public class ClientGUI extends JFrame {
         connectionStartTime = 0;
         updateUptime();
     }
-
-    // ─── Actions ──────────────────────────────────────────────────────────────
 
     private void sendMessage() {
         String text = msgInput.getText().trim();
@@ -730,8 +706,6 @@ public class ClientGUI extends JFrame {
         return false;
     }
 
-    // ─── Cell Renderers ───────────────────────────────────────────────────────
-
     private class UserRenderer extends DefaultListCellRenderer {
         @Override public Component getListCellRendererComponent(
                 JList<?> list, Object value, int index, boolean sel, boolean focus) {
@@ -771,7 +745,6 @@ public class ClientGUI extends JFrame {
         }
     }
 
-    // ─── Style Helpers ────────────────────────────────────────────────────────
 
     private JButton styledBtn(String text, Color bg) {
         JButton b = new JButton(text);
