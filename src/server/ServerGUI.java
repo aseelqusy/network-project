@@ -437,12 +437,14 @@ public class ServerGUI extends JFrame {
         int deleted = 0;
         for (String entry : selectedEntries) {
             String name = extractUserName(entry);
-            boolean kicked = server.kickUser(name);
+            boolean kicked = server.kickUser(name);         // disconnect if online
+            server.removeRegisteredUser(name);              // remove from registry regardless
+            existingUsersModel.removeElement("○  " + name); // remove from sidebar immediately
+            deleted++;
             if (kicked) {
-                deleted++;
-                appendLog("Kicked/deleted user: " + name);
+                appendLog("Kicked and deleted user: " + name);
             } else {
-                appendLog("Delete failed: user not online (" + name + ")");
+                appendLog("Deleted offline user: " + name);
             }
         }
         appendLog("Delete summary: " + deleted + "/" + selectedEntries.size() + " user(s) removed.");
