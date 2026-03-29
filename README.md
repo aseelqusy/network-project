@@ -100,8 +100,8 @@ The server pre-registers the following accounts on startup:
 
 | Username | Password |
 |----------|----------|
-| alice    | 1234     |
-| bob      | 1234     |
+| Ahmed    | 1234     |
+| Ali      | 1234     |
 
 Any other username can connect freely without a password unless registered by the admin.
 
