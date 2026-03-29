@@ -4,10 +4,14 @@ import common.Protocol;
 
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import java.awt.*;
 import java.awt.event.*;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
 
 public class ClientGUI extends JFrame {
 
@@ -24,14 +28,20 @@ public class ClientGUI extends JFrame {
     private static final Color BORDER_CLR   = new Color(58,  52,  44);
 
     // ── Status colours ────────────────────────────────────────────────────────
-    private static final Color STATUS_ACTIVE = new Color( 80, 200,  90);   // green
-    private static final Color STATUS_BUSY   = new Color(220, 180,  40);   // yellow
-    private static final Color STATUS_AWAY   = new Color(140, 138, 135);   // gray
+    private static final Color STATUS_ACTIVE = new Color( 80, 200,  90);
+    private static final Color STATUS_BUSY   = new Color(220, 180,  40);
+    private static final Color STATUS_AWAY   = new Color(140, 138, 135);
 
     // ── State ─────────────────────────────────────────────────────────────────
     private ChatClient client;
     private String     myUsername  = "";
     private String     currentRoom = Protocol.DEFAULT_ROOM;
+
+    // FIX #2: track whether we are currently collecting a USERS response
+    private boolean collectingUsers = false;
+
+    // FIX #1: master log of all chat lines, used for search filtering
+    private final List<String> allChatLines = new ArrayList<>();
 
     private DefaultListModel<String> roomListModel = new DefaultListModel<>();
     private JList<String>            roomList      = new JList<>(roomListModel);
@@ -143,7 +153,10 @@ public class ClientGUI extends JFrame {
         JButton btnRefresh = styledBtn("↺  Refresh", BG_BUTTON);
         btnRefresh.addActionListener(e -> {
             if (client != null && client.isConnected()) {
-                client.requestUsers(); client.requestRooms();
+                // FIX #2: clear lists before requesting fresh data from server
+                clearUserList();
+                client.requestUsers();
+                client.requestRooms();
             }
         });
 
@@ -170,11 +183,19 @@ public class ClientGUI extends JFrame {
         chatSP.setBorder(titledBorder("MESSAGES"));
         chatSP.getViewport().setBackground(new Color(22, 20, 18));
 
+        // FIX #1: wire up search box with a DocumentListener
         searchBox = styledField("Search messages...");
+        searchBox.getDocument().addDocumentListener(new DocumentListener() {
+            @Override public void insertUpdate(DocumentEvent e)  { filterChat(); }
+            @Override public void removeUpdate(DocumentEvent e)  { filterChat(); }
+            @Override public void changedUpdate(DocumentEvent e) { filterChat(); }
+        });
+
         JPanel searchRow = new JPanel(new BorderLayout(4, 0));
         searchRow.setBackground(BG_BASE);
-        JLabel sLbl = new JLabel("  🔍 ");
+        JLabel sLbl = new JLabel("  Search: ");
         sLbl.setForeground(TEXT_MUTED);
+        sLbl.setFont(new Font("SansSerif", Font.PLAIN, 11));
         searchRow.add(sLbl,       BorderLayout.WEST);
         searchRow.add(searchBox,  BorderLayout.CENTER);
 
@@ -310,7 +331,19 @@ public class ClientGUI extends JFrame {
         btnConn.addActionListener(e -> {
             String host = tfHost.getText().trim();
             String user = tfUser.getText().trim();
-            if (host.isEmpty() || user.isEmpty()) return;
+
+            // Username placeholder should not be treated as a real value.
+            Object phUser = tfUser.getClientProperty("placeholder");
+            if (phUser != null && user.equals(phUser.toString())) user = "";
+
+            // Keep localhost as a usable default when host is left blank.
+            if (host.isEmpty()) host = "127.0.0.1";
+
+            if (user.isEmpty()) {
+                JOptionPane.showMessageDialog(d,
+                        "Please enter a username.", "Missing input", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
             try {
                 client = new ChatClient(this::onServerMessage, this::onDisconnect);
                 client.connect(host, Protocol.SERVER_PORT);
@@ -344,47 +377,70 @@ public class ClientGUI extends JFrame {
 
     private void process(String line) {
         if (line.startsWith(Protocol.R_MESSAGE)) {
+            // MSG <room> <username> <timestamp> <text>
             String[] p = line.split(" ", 5);
             if (p.length >= 5)
                 appendChat(p[2], p[3], p[4]);
+
         } else if (line.startsWith(Protocol.R_PRIVATE)) {
+            // PM <from> <timestamp> <text>
             String[] p = line.split(" ", 4);
             if (p.length >= 4) {
-                appendChat("🔒 PM:" + p[1], p[2], p[3]);
+                appendChat("PM:" + p[1], p[2], p[3]);
                 pmArea.append("[" + p[2] + "] " + p[1] + ": " + p[3] + "\n");
             }
-        } else if (line.startsWith(Protocol.R_USERS_ENTRY)) {
-            String[] p = line.split(" ", 3);
-            if (p.length >= 2) {
-                String user   = p[1];
-                String status = p.length >= 3 ? p[2] : "ACTIVE";
-                String entry  = status.toUpperCase() + "|" + user;
-                if (!listContains(userListModel, "|" + user)) {
+
+        } else if (line.startsWith(Protocol.R_USERS)) {
+            // "213 <count>" signals start of a user list
+            // "213 END"     signals end of user list
+            // "213U <name> <status>" is an individual entry
+            if (line.equals(Protocol.R_USERS_END)) {
+                // FIX #2: end of USERS response — stop collecting
+                collectingUsers = false;
+            } else if (line.startsWith(Protocol.R_USERS_ENTRY)) {
+                // individual user entry
+                String[] p = line.split(" ", 3);
+                if (p.length >= 2) {
+                    String user   = p[1];
+                    String status = p.length >= 3 ? p[2] : "ACTIVE";
+                    String entry  = status.toUpperCase() + "|" + user;
                     userListModel.addElement(entry);
                     pmTargetCombo.addItem(user);
                 }
+            } else {
+                // "213 <count>" — start of list: clear stale data first
+                // FIX #2: clear user list before populating with fresh data
+                clearUserList();
+                collectingUsers = true;
             }
+
         } else if (line.startsWith(Protocol.R_ROOM)) {
             String room = line.substring(4).trim().split(" ")[0];
             if (!listContains(roomListModel, room))
                 roomListModel.addElement(room);
+
         } else if (line.startsWith(Protocol.R_USER_JOINED)) {
             String u = line.split(" ").length > 1 ? line.split(" ")[1] : "?";
             appendSystem("→ " + u + " joined");
+
         } else if (line.startsWith(Protocol.R_USER_LEFT)) {
             String u = line.split(" ").length > 1 ? line.split(" ")[1] : "?";
             appendSystem("← " + u + " left");
+            // USER_LEFT is room-scoped (switch/leave/disconnect), so do not alter global online list here.
         } else if (line.equals(Protocol.R_WELCOME)) {
             appendSystem("Welcome, " + myUsername + "! You are in #" + currentRoom);
+
         } else if (line.equals(Protocol.R_NAME_TAKEN)) {
-            JOptionPane.showMessageDialog(this, "Username already taken!", "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this,
+                    "Username already taken!", "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 
     private void onDisconnect() {
         SwingUtilities.invokeLater(() -> {
             log("Connection lost.");
-            JOptionPane.showMessageDialog(this, "Disconnected from server.", "Disconnected", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this,
+                    "Disconnected from server.", "Disconnected", JOptionPane.WARNING_MESSAGE);
         });
     }
 
@@ -392,19 +448,38 @@ public class ClientGUI extends JFrame {
 
     private void sendMessage() {
         String text = msgInput.getText().trim();
-        if (text.isEmpty() || client == null || !client.isConnected()) return;
+        // Treat placeholder as empty
+        Object phObj = msgInput.getClientProperty("placeholder");
+        if (phObj != null) {
+            String ph = phObj.toString();
+            if (text.equals(ph) || text.isEmpty()) return;
+        } else {
+            if (text.isEmpty()) return;
+        }
+        if (client == null || !client.isConnected()) return;
         client.sendMessage(currentRoom, text);
         msgInput.setText("");
+        // restore placeholder immediately if field loses focus
+        if (phObj != null) msgInput.setText(phObj.toString());
     }
 
     private void sendPrivate() {
         String target = (String) pmTargetCombo.getSelectedItem();
         String text   = pmInput.getText().trim();
-        if (text.isEmpty() || target == null || client == null) return;
+        // Treat placeholder as empty
+        Object phObj = pmInput.getClientProperty("placeholder");
+        if (phObj != null) {
+            String ph = phObj.toString();
+            if (text.equals(ph) || text.isEmpty()) return;
+        } else {
+            if (text.isEmpty()) return;
+        }
+        if (target == null || client == null) return;
         client.sendPrivate(target, text);
         String ts = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"));
         pmArea.append("[" + ts + "] Me → " + target + ": " + text + "\n");
         pmInput.setText("");
+        if (phObj != null) pmInput.setText(phObj.toString());
     }
 
     private void switchRoom(String room) {
@@ -415,19 +490,63 @@ public class ClientGUI extends JFrame {
         }
     }
 
+    // FIX #1: append to master list AND apply current filter
     private void appendChat(String user, String time, String msg) {
-        chatArea.append("[" + time + "] " + user + ": " + msg + "\n");
-        chatArea.setCaretPosition(chatArea.getDocument().getLength());
+        String line = "[" + time + "] " + user + ": " + msg;
+        allChatLines.add(line);
+        filterChat(); // re-render so search stays active
     }
 
     private void appendSystem(String text) {
-        chatArea.append("  " + text + "\n");
+        String line = "  " + text;
+        allChatLines.add(line);
+        filterChat();
+    }
+
+    // FIX #1: re-render chat area showing only lines matching the search term
+    private void filterChat() {
+        String query = searchBox.getText().trim();
+        Object placeholder = searchBox.getClientProperty("placeholder");
+        if (placeholder != null && query.equals(placeholder.toString())) {
+            query = "";
+        }
+        query = query.toLowerCase();
+
+        StringBuilder sb = new StringBuilder();
+        for (String line : allChatLines) {
+            if (query.isEmpty() || line.toLowerCase().contains(query)) {
+                sb.append(line).append("\n");
+            }
+        }
+        chatArea.setText(sb.toString());
         chatArea.setCaretPosition(chatArea.getDocument().getLength());
     }
 
     private void log(String text) {
         String ts = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
         statusBar.setText("   [" + ts + "] " + text);
+    }
+
+    // FIX #2: clear both the user sidebar and the PM target combo
+    private void clearUserList() {
+        userListModel.clear();
+        pmTargetCombo.removeAllItems();
+    }
+
+    // FIX #2: remove a single user when USER_LEFT is received
+    private void removeUserFromList(String username) {
+        for (int i = 0; i < userListModel.size(); i++) {
+            if (userListModel.get(i).contains("|" + username)) {
+                userListModel.remove(i);
+                break;
+            }
+        }
+        for (int i = 0; i < pmTargetCombo.getItemCount(); i++) {
+            if (username.equals(pmTargetCombo.getItemAt(i))) {
+                pmTargetCombo.removeItemAt(i);
+                break;
+            }
+        }
     }
 
     private boolean listContains(DefaultListModel<String> m, String key) {
@@ -490,12 +609,35 @@ public class ClientGUI extends JFrame {
 
     private JTextField styledField(String defaultValue) {
         JTextField f = new JTextField(defaultValue);
-        f.setBackground(BG_SURFACE); f.setForeground(TEXT_PRIMARY);
+        // store placeholder so callers can distinguish it from real input
+        f.putClientProperty("placeholder", defaultValue);
+        // render placeholder as muted until user focuses
+        f.setBackground(BG_SURFACE);
+        f.setForeground(TEXT_MUTED);
         f.setCaretColor(ACCENT);
         f.setFont(new Font("SansSerif", Font.PLAIN, 12));
         f.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(BORDER_CLR),
                 BorderFactory.createEmptyBorder(4, 8, 4, 8)));
+
+        // Clear placeholder on first focus; restore if left empty on focus lost
+        f.addFocusListener(new FocusAdapter() {
+            @Override public void focusGained(FocusEvent e) {
+                Object ph = f.getClientProperty("placeholder");
+                if (ph != null && f.getText().equals(ph.toString())) {
+                    f.setText("");
+                    f.setForeground(TEXT_PRIMARY);
+                }
+            }
+            @Override public void focusLost(FocusEvent e) {
+                Object ph = f.getClientProperty("placeholder");
+                if (ph != null && f.getText().trim().isEmpty()) {
+                    f.setText(ph.toString());
+                    f.setForeground(TEXT_MUTED);
+                }
+            }
+        });
+
         return f;
     }
 

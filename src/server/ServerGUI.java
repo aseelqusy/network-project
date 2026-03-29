@@ -15,7 +15,7 @@ import java.time.format.DateTimeFormatter;
 
 public class ServerGUI extends JFrame {
 
-    // ── Palette (matches ClientGUI) ───────────────────────────────────────────
+    // ── Palette ───────────────────────────────────────────────────────────────
     private static final Color BG_BASE      = new Color(28,  26,  24);
     private static final Color BG_PANEL     = new Color(36,  33,  30);
     private static final Color BG_SURFACE   = new Color(46,  42,  38);
@@ -66,7 +66,11 @@ public class ServerGUI extends JFrame {
 
         startServer();
 
-        new Timer(2000, e -> refreshSessions()).start();
+        // Refresh sessions AND mailbox stats every 2 seconds
+        new Timer(2000, e -> {
+            refreshSessions();
+            refreshMailbox();   // FIX #4
+        }).start();
         new Timer(1000, e -> updateUptime()).start();
     }
 
@@ -225,23 +229,24 @@ public class ServerGUI extends JFrame {
     private JPanel buildMailboxPanel() {
         JPanel p = new JPanel(new BorderLayout(0, 4));
         p.setBackground(BG_BASE);
-        p.setBorder(titledBorder("MAILBOX STATISTICS"));
+        p.setBorder(titledBorder("MESSAGE STATISTICS"));
 
-        String[] cols = {"User", "Inbox", "Sent", "Size"};
+        // FIX #4: columns now show real live data (sent, received, total)
+        String[] cols = {"User", "Sent", "Received", "Total"};
         mailboxModel = new DefaultTableModel(cols, 0) {
             @Override public boolean isCellEditable(int r, int c) { return false; }
         };
-        mailboxModel.addRow(new Object[]{"Ahmed",    5, 12, "3 KB"});
-        mailboxModel.addRow(new Object[]{"Sara",     2,  8, "500 B"});
-        mailboxModel.addRow(new Object[]{"Mohammed", 0,  1, "0 KB"});
 
         JTable tbl = styledTable(mailboxModel);
         JScrollPane sp = new JScrollPane(tbl);
         sp.getViewport().setBackground(BG_SURFACE);
         sp.setBorder(null);
 
-        JButton btnCleanup = styledBtn("Archive Cleanup (>30 days)", BG_BUTTON);
-        btnCleanup.addActionListener(e -> appendLog("Archive cleanup triggered."));
+        JButton btnCleanup = styledBtn("Reset Counters", BG_BUTTON);
+        btnCleanup.addActionListener(e -> {
+            server.resetMessageCounters();
+            appendLog("Message counters reset.");
+        });
 
         p.add(sp,         BorderLayout.CENTER);
         p.add(btnCleanup, BorderLayout.SOUTH);
@@ -267,9 +272,12 @@ public class ServerGUI extends JFrame {
         lbl.setFont(new Font("SansSerif", Font.PLAIN, 11));
         cbMaxMsg = styledCombo(new String[]{"64 KB","32 KB","16 KB","128 KB"});
         cbMaxMsg.setPreferredSize(new Dimension(80, 26));
+
+        // FIX #3: Apply button now actually calls server.setMaxMsgSize()
         JButton btnApply = styledBtn("Apply", BG_BTN_GREEN);
         btnApply.setForeground(new Color(225, 238, 210));
-        btnApply.addActionListener(e -> appendLog("Settings applied: " + cbMaxMsg.getSelectedItem()));
+        btnApply.addActionListener(e -> applyMaxMsgSize());
+
         p.add(lbl); p.add(cbMaxMsg); p.add(btnApply);
         return p;
     }
@@ -346,6 +354,16 @@ public class ServerGUI extends JFrame {
         });
     }
 
+    // FIX #4: populate mailbox table from real per-user counters in ChatServer
+    private void refreshMailbox() {
+        mailboxModel.setRowCount(0);
+        server.getClients().keySet().forEach(name -> {
+            int sent     = server.getSentCount(name);
+            int received = server.getReceivedCount(name);
+            mailboxModel.addRow(new Object[]{name, sent, received, sent + received});
+        });
+    }
+
     private void createUser() {
         String name = tfNewUser.getText().trim();
         if (name.isEmpty()) return;
@@ -376,6 +394,21 @@ public class ServerGUI extends JFrame {
         server.broadcastAll("MSG General SERVER " + ts + " [BROADCAST] " + msg);
         appendLog("Broadcast sent: " + msg);
         tfBroadcast.setText("");
+    }
+
+    // FIX #3: parse the combo selection and call the real setter
+    private void applyMaxMsgSize() {
+        String selected = (String) cbMaxMsg.getSelectedItem();
+        if (selected == null) return;
+        try {
+            // Parse "64 KB" → 64 * 1024 bytes
+            int kb = Integer.parseInt(selected.replace(" KB", "").trim());
+            int bytes = kb * 1024;
+            server.setMaxMsgSize(bytes);
+            appendLog("Max message size set to " + selected + " (" + bytes + " bytes)");
+        } catch (NumberFormatException ex) {
+            appendLog("Could not parse max message size: " + selected);
+        }
     }
 
     private void saveLogs() {

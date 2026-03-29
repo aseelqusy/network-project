@@ -84,10 +84,30 @@ public class ClientHandler implements Runnable {
     private void handleJoin(String[] parts) {
         if (!isLoggedIn()) return;
         if (parts.length < 2) { send(Protocol.R_ERROR + ": Usage: JOIN <room>"); return; }
-        String room = parts[1].trim();
-        server.joinRoom(username, room);
-        send(Protocol.R_JOINED + " " + room);
-        server.broadcastToRoom(room, Protocol.R_USER_JOINED + " " + username, username);
+
+        String targetRoom = parts[1].trim();
+        if (targetRoom.isEmpty()) {
+            send(Protocol.R_ERROR + ": Usage: JOIN <room>");
+            return;
+        }
+
+        String previousRoom = server.getCurrentRoom(username);
+        if (targetRoom.equals(previousRoom)) {
+            // No-op join; keep response so client state remains consistent.
+            send(Protocol.R_JOINED + " " + targetRoom);
+            return;
+        }
+
+        if (previousRoom != null) {
+            server.leaveRoom(username, previousRoom);
+            server.broadcastToRoom(previousRoom, Protocol.R_USER_LEFT + " " + username, username);
+            server.log("ROOM " + username + " left #" + previousRoom);
+        }
+
+        server.joinRoom(username, targetRoom);
+        send(Protocol.R_JOINED + " " + targetRoom);
+        server.broadcastToRoom(targetRoom, Protocol.R_USER_JOINED + " " + username, username);
+        server.log("ROOM " + username + " joined #" + targetRoom);
     }
 
     private void handleMsg(String[] parts) {
@@ -95,15 +115,16 @@ public class ClientHandler implements Runnable {
         if (parts.length < 3) { send(Protocol.R_ERROR + ": Usage: MSG <room> <message>"); return; }
         String room    = parts[1].trim();
         String message = parts[2].trim();
-        if (message.length() > Protocol.MAX_MSG_SIZE) {
+        if (message.length() > server.getMaxMsgSize()) {
             send(Protocol.R_ERROR + ": Message too large"); return;
         }
         String timestamp = LocalDateTime.now().format(TIME_FMT);
-        // broadcast to everyone in room including sender
         server.broadcastToRoom(room,
                 Protocol.R_MESSAGE + " " + room + " " + username + " " + timestamp + " " + message,
                 null);
         send(Protocol.R_SENT);
+        // FIX #4: record the sent message in the server counters
+        server.incrementSentCount(username);
         server.log("MSG [" + room + "] " + username + ": " + message);
     }
 
@@ -116,6 +137,10 @@ public class ClientHandler implements Runnable {
         boolean sent = server.sendPrivate(target,
                 Protocol.R_PRIVATE + " " + username + " " + timestamp + " " + message);
         send(sent ? Protocol.R_PRIVATE_SENT : Protocol.R_ERROR + ": User not found");
+        if (sent) {
+            // FIX #4: record the sent PM in the server counters
+            server.incrementSentCount(username);
+        }
         server.log("PM " + username + " → " + target + ": " + message);
     }
 
@@ -146,6 +171,7 @@ public class ClientHandler implements Runnable {
         server.leaveRoom(username, room);
         send(Protocol.R_LEFT);
         server.broadcastToRoom(room, Protocol.R_USER_LEFT + " " + username, username);
+        server.log("ROOM " + username + " left #" + room);
     }
 
     private void handleStatus(String[] parts) {
@@ -179,7 +205,7 @@ public class ClientHandler implements Runnable {
         try { if (socket != null && !socket.isClosed()) socket.close(); } catch (IOException ignored) {}
     }
 
-    public String getUsername()    { return username; }
-    public String getClientStatus(){ return currentStatus; }
-    public String getIP()          { return socket.getInetAddress().getHostAddress(); }
+    public String getUsername()     { return username; }
+    public String getClientStatus() { return currentStatus; }
+    public String getIP()           { return socket.getInetAddress().getHostAddress(); }
 }

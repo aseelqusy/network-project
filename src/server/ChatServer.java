@@ -16,16 +16,20 @@ import java.util.function.Consumer;
 public class ChatServer {
 
     // ─── State ────────────────────────────────────────────────────────────────
-    private final Map<String, ClientHandler>  clients    = new ConcurrentHashMap<>();
-    private final Map<String, Set<String>>    rooms      = new ConcurrentHashMap<>(); // room → usernames
-    private final Map<String, String>         userStatus = new ConcurrentHashMap<>(); // username → status
-    private final ExecutorService             pool       = Executors.newCachedThreadPool();
+    private final Map<String, ClientHandler>  clients      = new ConcurrentHashMap<>();
+    private final Map<String, Set<String>>    rooms        = new ConcurrentHashMap<>();
+    private final Map<String, String>         userStatus   = new ConcurrentHashMap<>();
+
+    // FIX #4: per-user message counters (thread-safe)
+    private final Map<String, Integer>        sentCount    = new ConcurrentHashMap<>();
+    private final Map<String, Integer>        receivedCount= new ConcurrentHashMap<>();
+
+    private final ExecutorService             pool         = Executors.newCachedThreadPool();
 
     private ServerSocket  serverSocket;
-    private boolean       running = false;
+    private boolean       running    = false;
     private int           maxMsgSize = Protocol.MAX_MSG_SIZE;
 
-    // GUI callback for log messages
     private Consumer<String> logCallback;
 
     // ─── Lifecycle ────────────────────────────────────────────────────────────
@@ -33,13 +37,11 @@ public class ChatServer {
     public void start(int port) throws IOException {
         serverSocket = new ServerSocket(port);
         running = true;
-        // Default rooms
         rooms.put(Protocol.DEFAULT_ROOM, ConcurrentHashMap.newKeySet());
         rooms.put("Networks", ConcurrentHashMap.newKeySet());
         rooms.put("Java", ConcurrentHashMap.newKeySet());
         log("Server started on TCP port " + port);
 
-        // Accept loop runs in background thread so GUI stays responsive
         pool.submit(() -> {
             while (running) {
                 try {
@@ -70,14 +72,15 @@ public class ChatServer {
     public synchronized void registerClient(String name, ClientHandler handler) {
         clients.put(name, handler);
         userStatus.put(name, "ACTIVE");
-        // Auto-join General room
+        sentCount.put(name, 0);
+        receivedCount.put(name, 0);
         joinRoom(name, Protocol.DEFAULT_ROOM);
     }
 
     public synchronized void removeClient(String name) {
         clients.remove(name);
         userStatus.remove(name);
-        // Remove from all rooms
+        // Keep counters until reset so stats remain visible briefly after disconnect
         for (Map.Entry<String, Set<String>> entry : rooms.entrySet()) {
             if (entry.getValue().remove(name)) {
                 broadcastToRoom(entry.getKey(), Protocol.R_USER_LEFT + " " + name, name);
@@ -108,6 +111,16 @@ public class ChatServer {
         rooms.computeIfAbsent(room, k -> ConcurrentHashMap.newKeySet()).add(username);
     }
 
+    // Returns the first room the user is currently in, or null if none.
+    public synchronized String getCurrentRoom(String username) {
+        for (Map.Entry<String, Set<String>> entry : rooms.entrySet()) {
+            if (entry.getValue().contains(username)) {
+                return entry.getKey();
+            }
+        }
+        return null;
+    }
+
     public synchronized void leaveRoom(String username, String room) {
         Set<String> members = rooms.get(room);
         if (members != null) members.remove(username);
@@ -124,14 +137,18 @@ public class ChatServer {
 
     // ─── Messaging ────────────────────────────────────────────────────────────
 
-    /** Sends message to all members of a room. excludeUser = null to include all. */
+    /** Sends a message to all members of a room. excludeUser = null to include all. */
     public void broadcastToRoom(String room, String message, String excludeUser) {
         Set<String> members = rooms.get(room);
         if (members == null) return;
         for (String member : members) {
             if (!member.equals(excludeUser)) {
                 ClientHandler h = clients.get(member);
-                if (h != null) h.send(message);
+                if (h != null) {
+                    h.send(message);
+                    // FIX #4: count each room message received by a member
+                    receivedCount.merge(member, 1, Integer::sum);
+                }
             }
         }
     }
@@ -146,7 +163,29 @@ public class ChatServer {
         ClientHandler h = clients.get(targetUsername);
         if (h == null) return false;
         h.send(message);
+        // FIX #4: count private message received by target
+        receivedCount.merge(targetUsername, 1, Integer::sum);
         return true;
+    }
+
+    // FIX #4: called by ClientHandler each time a user successfully sends a MSG or PM
+    public void incrementSentCount(String username) {
+        sentCount.merge(username, 1, Integer::sum);
+    }
+
+    // FIX #4: accessors used by ServerGUI to populate the stats table
+    public int getSentCount(String username) {
+        return sentCount.getOrDefault(username, 0);
+    }
+
+    public int getReceivedCount(String username) {
+        return receivedCount.getOrDefault(username, 0);
+    }
+
+    // FIX #4: reset all counters (triggered by the "Reset Counters" button)
+    public void resetMessageCounters() {
+        sentCount.replaceAll((k, v) -> 0);
+        receivedCount.replaceAll((k, v) -> 0);
     }
 
     // ─── Admin ────────────────────────────────────────────────────────────────
@@ -159,9 +198,9 @@ public class ChatServer {
         }
     }
 
-    public int getMaxMsgSize()              { return maxMsgSize; }
-    public void setMaxMsgSize(int size)     { this.maxMsgSize = size; }
-    public boolean isRunning()              { return running; }
+    public int getMaxMsgSize()          { return maxMsgSize; }
+    public void setMaxMsgSize(int size) { this.maxMsgSize = size; }
+    public boolean isRunning()          { return running; }
     public Map<String, ClientHandler> getClients() { return Collections.unmodifiableMap(clients); }
 
     // ─── Logging ──────────────────────────────────────────────────────────────
