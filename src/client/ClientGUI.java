@@ -412,13 +412,8 @@ public class ClientGUI extends JFrame {
             return;
         }
         if (line.equals(Protocol.R_KICKED)) {
-            JOptionPane.showMessageDialog(this,
-                    "Your account was deleted by the server admin.",
-                    "Disconnected",
-                    JOptionPane.WARNING_MESSAGE);
             if (client != null && client.isConnected()) client.disconnect();
-            dispose();
-            System.exit(0);
+            showKickCountdown();
             return;
         }
 
@@ -491,6 +486,83 @@ public class ClientGUI extends JFrame {
                     "Auth Failed", JOptionPane.ERROR_MESSAGE);
         }
         // ─────────────────────────────────────────────────────────────────
+    }
+    private void showKickCountdown() {
+        JDialog d = new JDialog(this, "Kicked by Admin", true);
+        d.setSize(360, 200);
+        d.setLocationRelativeTo(this);
+        d.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
+        d.getContentPane().setBackground(new Color(40, 20, 20));
+        d.setLayout(new GridBagLayout());
+
+        GridBagConstraints gc = new GridBagConstraints();
+        gc.insets = new Insets(10, 20, 6, 20);
+        gc.fill = GridBagConstraints.HORIZONTAL;
+        gc.gridwidth = 1;
+
+        JLabel iconLbl = new JLabel("⛔  You have been kicked by the admin", JLabel.CENTER);
+        iconLbl.setForeground(new Color(220, 80, 60));
+        iconLbl.setFont(new Font("SansSerif", Font.BOLD, 13));
+        gc.gridx = 0; gc.gridy = 0;
+        d.add(iconLbl, gc);
+
+        JLabel msgLbl = new JLabel("You will be returned to login in:", JLabel.CENTER);
+        msgLbl.setForeground(new Color(200, 190, 175));
+        msgLbl.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        gc.gridy = 1;
+        d.add(msgLbl, gc);
+
+        JLabel countLbl = new JLabel("5", JLabel.CENTER);
+        countLbl.setForeground(new Color(205, 165, 90));
+        countLbl.setFont(new Font("Monospaced", Font.BOLD, 40));
+        gc.gridy = 2;
+        d.add(countLbl, gc);
+
+        JLabel secLbl = new JLabel("seconds", JLabel.CENTER);
+        secLbl.setForeground(new Color(145, 135, 118));
+        secLbl.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        gc.gridy = 3;
+        d.add(secLbl, gc);
+
+        int[] countdown = {5};
+        Timer t = new Timer(1000, null);
+        t.addActionListener(e -> {
+            countdown[0]--;
+            countLbl.setText(String.valueOf(countdown[0]));
+            if (countdown[0] <= 0) {
+                t.stop();
+                d.dispose();
+                resetAfterKick();
+            }
+        });
+        t.start();
+
+        d.setVisible(true);
+    }
+
+    private void resetAfterKick() {
+        // Reset all state
+        myUsername  = "";
+        currentRoom = Protocol.DEFAULT_ROOM;
+        client      = null;
+
+        // Clear UI
+        chatArea.setText("");
+        allChatLines.clear();
+        userListModel.clear();
+        roomListModel.clear();
+        roomListModel.addElement("General");
+        roomListModel.addElement("Networks");
+        roomListModel.addElement("Java");
+        pmArea.setText("");
+        pmTargetCombo.removeAllItems();
+        connLabel.setText("  |  not connected");
+        resetUptime();
+        setTitle("ChatLite Client");
+        log("Disconnected — kicked by admin.");
+
+        // Re-open login dialog
+        showLoginDialog();
     }
 
     private void onDisconnect() {
