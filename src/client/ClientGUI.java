@@ -11,7 +11,9 @@ import java.awt.event.*;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class ClientGUI extends JFrame {
 
@@ -36,7 +38,7 @@ public class ClientGUI extends JFrame {
 
     private boolean collectingUsers = false;
 
-    private final List<String> allChatLines = new ArrayList<>();
+    private final Map<String, List<String>> roomChatLines = new HashMap<>();
 
     private DefaultListModel<String> roomListModel = new DefaultListModel<>();
     private JList<String>            roomList      = new JList<>(roomListModel);
@@ -420,15 +422,28 @@ public class ClientGUI extends JFrame {
             return;
         }
 
+        if (line.equals(Protocol.R_HISTORY_BEGIN)) {
+            appendSystem("--- Previous chat history ---");
+            return;
+        }
+        if (line.equals(Protocol.R_HISTORY_END)) {
+            appendSystem("--- End of history ---");
+            return;
+        }
+        if (line.startsWith(Protocol.R_HISTORY + " ")) {
+            appendHistoryLine(line.substring((Protocol.R_HISTORY + " ").length()));
+            return;
+        }
+
         if (line.startsWith(Protocol.R_MESSAGE)) {
             String[] p = line.split(" ", 5);
             if (p.length >= 5)
-                appendChat(p[2], p[3], p[4]);
+                appendChat(p[1], p[2], p[3], p[4]);
 
         } else if (line.startsWith(Protocol.R_PRIVATE)) {
             String[] p = line.split(" ", 4);
             if (p.length >= 4) {
-                appendChat("PM:" + p[1], p[2], p[3]);
+                appendChat(currentRoom, "PM:" + p[1], p[2], p[3]);
                 pmArea.append("[" + p[2] + "] " + p[1] + ": " + p[3] + "\n");
             }
 
@@ -453,6 +468,7 @@ public class ClientGUI extends JFrame {
             String room = line.substring(4).trim().split(" ")[0];
             if (!listContains(roomListModel, room))
                 roomListModel.addElement(room);
+            getRoomLines(room);
 
         } else if (line.startsWith(Protocol.R_USER_JOINED)) {
             String u = line.split(" ").length > 1 ? line.split(" ")[1] : "?";
@@ -560,7 +576,7 @@ public class ClientGUI extends JFrame {
         serverMaxMsgSize = Protocol.MAX_MSG_SIZE;
 
         chatArea.setText("");
-        allChatLines.clear();
+        roomChatLines.clear();
         userListModel.clear();
         roomListModel.clear();
         roomListModel.addElement("General");
@@ -642,20 +658,48 @@ public class ClientGUI extends JFrame {
         if (!room.equals(currentRoom)) {
             if (client != null && client.isConnected()) client.joinRoom(room);
             currentRoom = room;
+            getRoomLines(currentRoom);
             appendSystem("─── Switched to #" + room + " ───");
         }
     }
 
-    private void appendChat(String user, String time, String msg) {
+    private List<String> getRoomLines(String room) {
+        return roomChatLines.computeIfAbsent(room, k -> new ArrayList<>());
+    }
+
+    private void appendChat(String room, String user, String time, String msg) {
         String line = "[" + time + "] " + user + ": " + msg;
-        allChatLines.add(line);
-        filterChat();
+        getRoomLines(room).add(line);
+        if (room.equals(currentRoom)) {
+            filterChat();
+        }
     }
 
     private void appendSystem(String text) {
         String line = "  " + text;
-        allChatLines.add(line);
+        getRoomLines(currentRoom).add(line);
         filterChat();
+    }
+
+    private void appendHistoryLine(String historyLine) {
+        String room = extractRoomFromHistory(historyLine);
+        String targetRoom = (room == null || room.isBlank()) ? currentRoom : room;
+        if (!listContains(roomListModel, targetRoom)) {
+            roomListModel.addElement(targetRoom);
+        }
+        getRoomLines(targetRoom).add("[HISTORY] " + historyLine);
+        if (targetRoom.equals(currentRoom)) {
+            filterChat();
+        }
+    }
+
+    private String extractRoomFromHistory(String historyLine) {
+        int start = historyLine.indexOf("[ROOM:");
+        if (start < 0) return null;
+        int end = historyLine.indexOf(']', start);
+        if (end < 0) return null;
+        String room = historyLine.substring(start + 6, end).trim();
+        return room.isEmpty() ? null : room;
     }
 
     private void filterChat() {
@@ -667,7 +711,7 @@ public class ClientGUI extends JFrame {
         query = query.toLowerCase();
 
         StringBuilder sb = new StringBuilder();
-        for (String line : allChatLines) {
+        for (String line : getRoomLines(currentRoom)) {
             if (query.isEmpty() || line.toLowerCase().contains(query)) {
                 sb.append(line).append("\n");
             }

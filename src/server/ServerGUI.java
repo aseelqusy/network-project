@@ -357,9 +357,11 @@ public class ServerGUI extends JFrame {
             JOptionPane.showMessageDialog(this,
                     "Failed to start server:\n" + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
         }
-        server.registerUser("Ahmed", "1234");
-        server.registerUser("Ali",   "1234");
-        appendLog("Sample users created: alice, bob (password: 1234)");
+        if (server.getRegisteredUsers().isEmpty()) {
+            server.registerUser("Ahmed", "1234");
+            server.registerUser("Ali", "1234");
+            appendLog("Sample users created: Ahmed, Ali (password: 1234)");
+        }
     }
 
     private void shutdown() {
@@ -461,8 +463,7 @@ public class ServerGUI extends JFrame {
     private void sendBroadcast() {
         String msg = tfBroadcast.getText().trim();
         if (msg.isEmpty()) return;
-        String ts = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"));
-        server.broadcastAll("MSG General SERVER " + ts + " [BROADCAST] " + msg);
+        server.broadcastServerMessage(Protocol.DEFAULT_ROOM, msg);
         appendLog("Broadcast sent: " + msg);
         tfBroadcast.setText("");
     }

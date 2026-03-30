@@ -2,37 +2,65 @@ package server;
 
 import common.Protocol;
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.*;
-import java.util.concurrent.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 
 public class ChatServer {
 
-    private final Map<String, ClientHandler>  clients      = new ConcurrentHashMap<>();
-    private final Map<String, Set<String>>    rooms        = new ConcurrentHashMap<>();
-    private final Map<String, String>         userStatus   = new ConcurrentHashMap<>();
+    private final Map<String, ClientHandler> clients = new ConcurrentHashMap<>();
+    private final Map<String, Set<String>> rooms = new ConcurrentHashMap<>();
+    private final Map<String, String> userStatus = new ConcurrentHashMap<>();
 
-    private final Map<String, Integer>        sentCount    = new ConcurrentHashMap<>();
-    private final Map<String, Integer>        receivedCount= new ConcurrentHashMap<>();
+    private final Map<String, Integer> sentCount = new ConcurrentHashMap<>();
+    private final Map<String, Integer> receivedCount = new ConcurrentHashMap<>();
 
-    private final ExecutorService             pool         = Executors.newCachedThreadPool();
+    private final ExecutorService pool = Executors.newCachedThreadPool();
 
-    private ServerSocket  serverSocket;
-    private boolean       running    = false;
-    private int           maxMsgSize = Protocol.MAX_MSG_SIZE;
+    private final Map<String, String> registeredUsers = new ConcurrentHashMap<>();
+
+    private final Path dataDir = Paths.get("data");
+    private final Path usersFile = dataDir.resolve("users.txt");
+    private final Path messagesFile = dataDir.resolve("messages.txt");
+    private final Object usersFileLock = new Object();
+    private final Object messagesFileLock = new Object();
+
+    private static final DateTimeFormatter HISTORY_TS_FMT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    private ServerSocket serverSocket;
+    private boolean running = false;
+    private int maxMsgSize = Protocol.MAX_MSG_SIZE;
 
     private Consumer<String> logCallback;
-    private final Map<String, String> registeredUsers = new ConcurrentHashMap<>();
 
     public void start(int port) throws IOException {
         start("0.0.0.0", port);
     }
 
     public void start(String host, int port) throws IOException {
+        ensureDataDirectory();
+        loadUsersFromFile();
+
         InetAddress bindAddress = InetAddress.getByName(host);
         serverSocket = new ServerSocket(port, 50, bindAddress);
         running = true;
@@ -58,10 +86,131 @@ public class ChatServer {
     public void stop() {
         running = false;
         broadcastAll(Protocol.R_SERVER_SHUTDOWN);
-        try { Thread.sleep(300); } catch (InterruptedException ignored) {}
-        try { if (serverSocket != null) serverSocket.close(); } catch (IOException ignored) {}
+        try {
+            Thread.sleep(300);
+        } catch (InterruptedException ignored) {
+        }
+        try {
+            if (serverSocket != null) serverSocket.close();
+        } catch (IOException ignored) {
+        }
         pool.shutdownNow();
         log("Server stopped.");
+    }
+
+    // Creates the data directory used by users.txt and messages.txt if missing.
+    public void ensureDataDirectory() {
+        try {
+            Files.createDirectories(dataDir);
+        } catch (IOException e) {
+            log("Failed to create data directory: " + e.getMessage());
+        }
+    }
+
+    // Loads persisted users from data/users.txt into the in-memory registeredUsers map.
+    public void loadUsersFromFile() {
+        registeredUsers.clear();
+        if (!Files.exists(usersFile)) {
+            return;
+        }
+
+        synchronized (usersFileLock) {
+            try (BufferedReader reader = Files.newBufferedReader(usersFile, StandardCharsets.UTF_8)) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String trimmed = line.trim();
+                    if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+                        continue;
+                    }
+                    int idx = trimmed.indexOf(':');
+                    if (idx < 0) {
+                        registeredUsers.put(trimmed, "");
+                    } else {
+                        String username = trimmed.substring(0, idx).trim();
+                        String password = trimmed.substring(idx + 1);
+                        if (!username.isEmpty()) {
+                            registeredUsers.put(username, password);
+                        }
+                    }
+                }
+                log("Loaded " + registeredUsers.size() + " user account(s) from " + usersFile + ".");
+            } catch (IOException e) {
+                log("Failed to load users: " + e.getMessage());
+            }
+        }
+    }
+
+    // Writes the in-memory registeredUsers map to data/users.txt atomically.
+    public void saveUsersToFile() {
+        ensureDataDirectory();
+        synchronized (usersFileLock) {
+            Path tempFile = usersFile.resolveSibling("users.txt.tmp");
+            try (BufferedWriter writer = Files.newBufferedWriter(tempFile, StandardCharsets.UTF_8)) {
+                List<String> usernames = new ArrayList<>(registeredUsers.keySet());
+                Collections.sort(usernames);
+                for (String username : usernames) {
+                    String password = registeredUsers.getOrDefault(username, "");
+                    writer.write(username + ":" + password);
+                    writer.newLine();
+                }
+            } catch (IOException e) {
+                log("Failed to save users: " + e.getMessage());
+                return;
+            }
+
+            try {
+                Files.move(tempFile, usersFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            } catch (IOException moveEx) {
+                try {
+                    Files.move(tempFile, usersFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                } catch (IOException fallbackEx) {
+                    log("Failed to finalize users file: " + fallbackEx.getMessage());
+                    return;
+                }
+                log("Users file move warning: " + moveEx.getMessage());
+            }
+        }
+    }
+
+    // Appends one formatted history line to data/messages.txt.
+    public void appendMessageToHistory(String line) {
+        if (line == null || line.isBlank()) {
+            return;
+        }
+        ensureDataDirectory();
+        synchronized (messagesFileLock) {
+            try (BufferedWriter writer = Files.newBufferedWriter(
+                    messagesFile,
+                    StandardCharsets.UTF_8,
+                    java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.APPEND)) {
+                writer.write(line);
+                writer.newLine();
+            } catch (IOException e) {
+                log("Failed to append history: " + e.getMessage());
+            }
+        }
+    }
+
+    // Loads all persisted message history lines from data/messages.txt.
+    public List<String> loadMessageHistory() {
+        if (!Files.exists(messagesFile)) {
+            return Collections.emptyList();
+        }
+
+        synchronized (messagesFileLock) {
+            try {
+                return Files.readAllLines(messagesFile, StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                log("Failed to read message history: " + e.getMessage());
+                return Collections.emptyList();
+            }
+        }
+    }
+
+    public String nowHistoryTimestamp() {
+        return LocalDateTime.now().format(HISTORY_TS_FMT);
     }
 
     public synchronized boolean isUsernameTaken(String name) {
@@ -148,6 +297,15 @@ public class ChatServer {
         clients.values().forEach(h -> h.send(message));
     }
 
+    public void broadcastServerMessage(String room, String message) {
+        String roomName = (room == null || room.isBlank()) ? Protocol.DEFAULT_ROOM : room.trim();
+        String ts = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
+        String payload = Protocol.R_MESSAGE + " " + roomName + " SERVER " + ts + " [BROADCAST] " + message;
+        broadcastAll(payload);
+        appendMessageToHistory("[" + nowHistoryTimestamp() + "] [BROADCAST] SERVER: " + message);
+        log("BROADCAST " + message);
+    }
+
     public boolean sendPrivate(String targetUsername, String message) {
         ClientHandler h = clients.get(targetUsername);
         if (h == null) return false;
@@ -181,27 +339,40 @@ public class ChatServer {
         return true;
     }
 
-    public int getMaxMsgSize()          { return maxMsgSize; }
+    public int getMaxMsgSize() {
+        return maxMsgSize;
+    }
+
     public void setMaxMsgSize(int size) {
         this.maxMsgSize = size;
         broadcastAll(Protocol.R_MAX_MSG_SIZE + " " + size);
     }
-    public boolean isRunning()          { return running; }
-    public Map<String, ClientHandler> getClients() { return Collections.unmodifiableMap(clients); }
 
-    public void setLogCallback(Consumer<String> cb) { this.logCallback = cb; }
+    public boolean isRunning() {
+        return running;
+    }
+
+    public Map<String, ClientHandler> getClients() {
+        return Collections.unmodifiableMap(clients);
+    }
+
+    public void setLogCallback(Consumer<String> cb) {
+        this.logCallback = cb;
+    }
 
     public void log(String message) {
-        String ts = java.time.LocalTime.now()
-                .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
+        String ts = LocalTime.now()
+                .format(DateTimeFormatter.ofPattern("HH:mm:ss"));
         String entry = "[" + ts + "] " + message;
         System.out.println(entry);
         if (logCallback != null) logCallback.accept(entry);
     }
+
     public boolean registerUser(String username, String password) {
         if (username == null || username.isBlank()) return false;
         if (registeredUsers.containsKey(username)) return false;
-        registeredUsers.put(username, password);
+        registeredUsers.put(username, password == null ? "" : password);
+        saveUsersToFile();
         return true;
     }
 
@@ -212,7 +383,7 @@ public class ChatServer {
     public boolean validatePassword(String username, String password) {
         String stored = registeredUsers.get(username);
         if (stored == null) return true;
-        return stored.equals(password);
+        return stored.equals(password == null ? "" : password);
     }
 
     public Set<String> getRegisteredUsers() {
@@ -220,6 +391,11 @@ public class ChatServer {
     }
 
     public boolean removeRegisteredUser(String username) {
-        return registeredUsers.remove(username) != null;
+        boolean removed = registeredUsers.remove(username) != null;
+        if (removed) {
+            saveUsersToFile();
+        }
+        return removed;
     }
 }
+

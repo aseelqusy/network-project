@@ -31,6 +31,9 @@ public class Protocol {
     public static final String R_SERVER_SHUTDOWN = "400 SHUTDOWN";
     public static final String R_KICKED         = "400 KICKED";
     public static final String R_ERROR          = "400 ERROR";
+    public static final String R_HISTORY_BEGIN  = "HISTORY_BEGIN";
+    public static final String R_HISTORY        = "HISTORY";
+    public static final String R_HISTORY_END    = "HISTORY_END";
 
     public static final int    SERVER_PORT      = 5000;
     public static final String SERVER_HOST      = "10.250.162.140";

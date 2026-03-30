@@ -74,11 +74,27 @@ public class ClientHandler implements Runnable {
             send(Protocol.R_AUTH_FAIL);
             return;
         }
+
+        // Keep existing login flow simple: first successful login creates a persisted account.
+        if (!server.isRegistered(name)) {
+            server.registerUser(name, password);
+        }
+
         this.username = name;
         server.registerClient(name, this);
         send(Protocol.R_WELCOME);
         send(Protocol.R_MAX_MSG_SIZE + " " + server.getMaxMsgSize());
+        sendHistoryToClient();
         server.log("User connected: " + name + " from " + socket.getInetAddress().getHostAddress());
+    }
+
+    // Streams persisted message history to the newly authenticated client.
+    private void sendHistoryToClient() {
+        send(Protocol.R_HISTORY_BEGIN);
+        for (String historyLine : server.loadMessageHistory()) {
+            send(Protocol.R_HISTORY + " " + historyLine);
+        }
+        send(Protocol.R_HISTORY_END);
     }
 
     private void handleJoin(String[] parts) {
@@ -121,6 +137,7 @@ public class ClientHandler implements Runnable {
         server.broadcastToRoom(room,
                 Protocol.R_MESSAGE + " " + room + " " + username + " " + timestamp + " " + message,
                 null);
+        server.appendMessageToHistory("[" + server.nowHistoryTimestamp() + "] [ROOM:" + room + "] " + username + ": " + message);
         send(Protocol.R_SENT);
         server.incrementSentCount(username);
         server.log("MSG [" + room + "] " + username + ": " + message);
@@ -137,6 +154,7 @@ public class ClientHandler implements Runnable {
         send(sent ? Protocol.R_PRIVATE_SENT : Protocol.R_ERROR + ": User not found");
         if (sent) {
             server.incrementSentCount(username);
+            server.appendMessageToHistory("[" + server.nowHistoryTimestamp() + "] [PM:" + username + "->" + target + "] " + username + ": " + message);
         }
         server.log("PM " + username + " → " + target + ": " + message);
     }
