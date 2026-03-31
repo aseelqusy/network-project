@@ -1,13 +1,13 @@
-# ChatLite — Minimal Real-Time Chat System
+# ChatLite
 
-A multi-client real-time chat application built with Java Sockets and Swing GUI, developed as part of the Networks 1 course at An-Najah National University.
+A minimal real-time chat system built with Java sockets and Swing GUI. Supports multiple clients, chat rooms, private messaging, user authentication, and message history persistence.
 
 ---
 
 ## Requirements
 
-- Java JDK 11 or higher
-- No external libraries required — pure Java SE
+- Java 11 or higher
+- No external libraries required
 
 ---
 
@@ -16,162 +16,128 @@ A multi-client real-time chat application built with Java Sockets and Swing GUI,
 ```
 ChatLite/
 ├── src/
-│   ├── client/
-│   │   ├── ChatClient.java       # TCP socket logic and protocol commands
-│   │   └── ClientGUI.java        # Swing GUI for the chat client
+│   ├── common/
+│   │   └── Protocol.java          # Shared constants and protocol codes
 │   ├── server/
-│   │   ├── ChatServer.java       # Core server logic, rooms, messaging
-│   │   ├── ClientHandler.java    # Per-client thread, protocol parser
-│   │   └── ServerGUI.java        # Swing GUI for the server console
-│   └── common/
-│       └── Protocol.java         # Shared protocol constants
-└── README.md
+│   │   ├── ChatServer.java        # Core server logic
+│   │   ├── ClientHandler.java     # Per-client connection handler
+│   │   └── ServerGUI.java         # Server admin console (Swing)
+│   └── client/
+│       ├── ChatClient.java        # Socket-based client logic
+│       └── ClientGUI.java         # Client chat interface (Swing)
+└── data/
+    ├── users.txt                  # Persisted user accounts (auto-created)
+    └── messages.txt               # Persisted message history (auto-created)
 ```
 
 ---
 
-## How to Compile
+## Configuration
 
-Open a terminal in the project root directory and run:
+Before running, open `src/common/Protocol.java` and set the server IP to match your machine:
+
+```java
+public static final String SERVER_HOST = "your.ip.address.here";
+```
+
+Use `localhost` if running both server and client on the same machine, or your LAN IP (e.g. `192.168.1.x`) if connecting across a network. The default port is `5000` and can also be changed in this file.
+
+---
+
+## Compiling
+
+From the project root directory:
 
 ```bash
 # Create output directory
 mkdir -p out
 
 # Compile all source files
-javac -d out src/common/Protocol.java \
-             src/server/ChatServer.java \
-             src/server/ClientHandler.java \
-             src/server/ServerGUI.java \
-             src/client/ChatClient.java \
-             src/client/ClientGUI.java
-```
-
-Or compile everything at once:
-
-```bash
-find src -name "*.java" | xargs javac -d out
+javac -d out src/common/Protocol.java src/server/*.java src/client/*.java
 ```
 
 ---
 
-## How to Run
+## Running
 
-### 1. Start the Server
+**Start the server first:**
 
 ```bash
 java -cp out server.ServerGUI
 ```
 
-The server GUI will open and automatically start listening on **port 5000**.
+The server console window will open and the server will start listening on port 5000. Two sample users (`Ahmed` and `Ali`, password: `1234`) are created automatically on first run if no `data/users.txt` exists.
 
-> **Note:** The server binds to the IP address defined in `Protocol.SERVER_HOST`. If running locally, change this value in `src/common/Protocol.java` to `127.0.0.1` before compiling.
-
-### 2. Start the Client
-
-Open a second terminal and run:
+**Then start one or more clients:**
 
 ```bash
 java -cp out client.ClientGUI
 ```
 
-A login dialog will appear. Enter a username (and password if the admin pre-registered your account) and click **Connect**.
-
-You can launch multiple clients simultaneously by opening additional terminals and repeating this command.
+Each client instance opens a login dialog. Enter a username and password to connect.
 
 ---
 
-## Default Configuration
-
-| Setting        | Value              |
-|----------------|--------------------|
-| Server IP      | 10.250.162.140     |
-| Server Port    | 5000               |
-| Default Room   | General            |
-| Max Msg Size   | 64 KB (65,536 B)   |
-
-To run locally, change `SERVER_HOST` in `Protocol.java` to `127.0.0.1`.
-
----
-
-## Sample Users for Testing
-
-The server pre-registers the following accounts on startup:
+## Default Test Accounts
 
 | Username | Password |
 |----------|----------|
 | Ahmed    | 1234     |
 | Ali      | 1234     |
 
-Any other username can connect freely without a password unless registered by the admin.
+New accounts are created automatically when a user logs in for the first time with a name that doesn't exist yet.
 
 ---
 
-## Available Chat Rooms
+## Default Chat Rooms
 
-Three rooms are created automatically when the server starts:
-
-- **General** (default room for all users)
-- **Networks**
-- **Java**
-
----
-
-## Communication Protocol Summary
-
-| Client Command         | Server Response       |
-|------------------------|-----------------------|
-| `HELLO <user> [pass]`  | `200 WELCOME`         |
-| `JOIN <room>`          | `210 JOINED <room>`   |
-| `MSG <room> <text>`    | `211 SENT`            |
-| `PM <user> <text>`     | `212 PRIVATE SENT`    |
-| `USERS`                | `213U` entries + `213 END` |
-| `ROOMS`                | `214 <room>` entries  |
-| `LEAVE <room>`         | `215 LEFT`            |
-| `STATUS <state>`       | `216 STATUS` broadcast|
-| `QUIT`                 | `221 BYE`             |
+| Room     | Description              |
+|----------|--------------------------|
+| General  | Default room for all users |
+| Networks | Computer Networks topics |
+| Java     | Java programming topics  |
 
 ---
 
-## Server Admin Features
+## Features
 
-From the Server Console GUI you can:
-
-- **Create users** with optional passwords
-- **Delete / kick** connected or pre-registered users
-- **Broadcast** a message to all connected clients
-- **View active sessions** with IP addresses and status
-- **View message statistics** (sent / received / total per user)
-- **Adjust max message size** (16 KB / 32 KB / 64 KB / 128 KB)
-- **Save system logs** to a text file
-
----
-
-## Client Features
-
-- Join and switch between multiple chat rooms
-- Send and receive private messages
-- Change status: **Active**, **Busy**, or **Away**
-- Search and filter chat history in real time
-- Connection uptime display
-- Kick countdown — if removed by admin, a 5-second dialog appears before returning to the login screen
+- **Real-time messaging** across multiple chat rooms
+- **Private messaging** between any two online users
+- **User authentication** with password validation
+- **Message history** replayed on login from persistent storage
+- **User status** — set yourself as Active, Busy, or Away
+- **Message search** — filter the chat area by keyword
+- **Admin controls** — kick users, delete accounts, broadcast messages, reset message counters, set maximum message size
+- **Uptime display** on both server and client
 
 ---
 
-## Troubleshooting
+## Communication Protocol
 
-| Problem | Solution |
-|---|---|
-| `Connection refused` | Make sure the server is running before starting the client |
-| `Failed to start server` | The IP in `Protocol.SERVER_HOST` may not match your machine. Change it to `127.0.0.1` for local testing |
-| Username taken | Choose a different username or wait for the previous session to disconnect |
-| Auth failed | You are trying to connect with a pre-registered username and the wrong password |
+All messages are plain text lines over TCP, terminated by a newline. Key commands:
+
+| Client sends         | Server responds        | Meaning                        |
+|----------------------|------------------------|--------------------------------|
+| `HELLO <user> <pw>`  | `200 WELCOME`          | Login / register               |
+| `JOIN <room>`        | `210 JOINED <room>`    | Join a chat room               |
+| `MSG <room> <text>`  | `211 SENT`             | Send a room message            |
+| `PM <user> <text>`   | `212 PRIVATE SENT`     | Send a private message         |
+| `USERS`              | `213U` entries + END   | List online users              |
+| `ROOMS`              | `214` entries          | List available rooms           |
+| `LEAVE <room>`       | `215 LEFT`             | Leave a room                   |
+| `STATUS <status>`    | broadcast to all       | Update your status             |
+| `QUIT`               | `221 BYE`              | Disconnect                     |
+
+Server-initiated messages include `400 KICKED`, `400 DELETED`, `400 SHUTDOWN`, and `HISTORY` lines sent on login.
 
 ---
 
-## Course Information
+## Data Persistence
 
-- **Course:** Networks 1 (10636454)
-- **Institution:** An-Najah National University — Faculty of Engineering
-- **Instructor:** Dr. Eng. Saed TARAPIAH
-- **Academic Year:** 2025–2026, Spring Semester
+User accounts are saved to `data/users.txt` in `username:password` format. This file is created automatically and updated whenever a user registers or is deleted.
+
+Chat history is appended to `data/messages.txt` in real time. All connected clients receive this history when they log in.
+
+Both files are created in the working directory from which the server is launched.
+
+---
