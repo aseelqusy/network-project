@@ -238,4 +238,8 @@ public class ClientHandler implements Runnable {
     public String getUsername()     { return username; }
     public String getClientStatus() { return currentStatus; }
     public String getIP()           { return socket.getInetAddress().getHostAddress(); }
+    public void deleteByAdmin() {
+        send(Protocol.R_DELETED);
+        disconnect(false);
+    }
 }

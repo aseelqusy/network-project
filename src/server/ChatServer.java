@@ -397,5 +397,12 @@ public class ChatServer {
         }
         return removed;
     }
+    public boolean deleteUser(String username) {
+        ClientHandler h = clients.get(username);
+        if (h == null) return false;
+        h.deleteByAdmin();
+        log("Admin deleted user: " + username);
+        return true;
+    }
 }
 

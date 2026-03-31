@@ -40,4 +40,5 @@ public class Protocol {
     public static final String DEFAULT_ROOM     = "General";
     public static final int    MAX_MSG_SIZE     = 65536;
     public static final String R_AUTH_FAIL = "402 AUTH FAIL";
+    public static final String R_DELETED = "400 DELETED";
 }

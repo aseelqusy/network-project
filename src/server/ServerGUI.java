@@ -435,7 +435,7 @@ public class ServerGUI extends JFrame {
         int deleted = 0;
         for (String entry : selectedEntries) {
             String name = extractUserName(entry);
-            boolean kicked = server.kickUser(name);
+            boolean kicked = server.deleteUser(name);
             server.removeRegisteredUser(name);
             existingUsersModel.removeElement("○  " + name);
             deleted++;

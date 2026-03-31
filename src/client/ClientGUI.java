@@ -418,7 +418,12 @@ public class ClientGUI extends JFrame {
         }
         if (line.equals(Protocol.R_KICKED)) {
             if (client != null && client.isConnected()) client.disconnect();
-            showKickCountdown();
+            showKickCountdown();  // shows the timer
+            return;
+        }
+        if (line.equals(Protocol.R_DELETED)) {
+            if (client != null && client.isConnected()) client.disconnect();
+            resetAfterKick();     // goes straight back to login, no timer
             return;
         }
 
